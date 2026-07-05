@@ -6,6 +6,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![VanillaJS](https://img.shields.io/badge/Vanilla_JS-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)]()
 [![PWA Ready](https://img.shields.io/badge/PWA-Ready-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 **A blazing-fast, self-hosted media server and file manager.**
 Accessible from **any device** on your local network — Android, iPhone, Smart TV, and Jio Set Top Box.
@@ -127,3 +128,9 @@ graph LR
 
 * **Air-gapped by default**: Only accessible on your local Wi-Fi (binds to `0.0.0.0`).
 * **Zero Internet Required**: Once set up, the entire app (including the PDF engine) runs offline!
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
