@@ -11,6 +11,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
+import asyncio
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -384,9 +385,20 @@ async def api_delete(request: Request):
         try:
             target = _safe_resolve(p, settings)
             if target.is_dir():
-                shutil.rmtree(str(target))
+                shutil.rmtree(str(target), ignore_errors=True)
             else:
-                target.unlink()
+                # Windows File Lock handling:
+                # If a video was just playing, the OS might take a moment to release the file handle.
+                max_retries = 3
+                for i in range(max_retries):
+                    try:
+                        target.unlink()
+                        break
+                    except PermissionError as e:
+                        if i == max_retries - 1:
+                            raise e
+                        await asyncio.sleep(0.5)
+                        
             db.delete_media_file(str(target))
             results.append({"path": p, "success": True})
         except Exception as e:
