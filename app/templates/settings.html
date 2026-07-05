@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="top-bar">
+    <div class="page-header">
+        <h2><i class="fas fa-gear" style="color: var(--text-muted); margin-right: 8px;"></i>Settings</h2>
+        <p>Configure your media server</p>
+    </div>
+</div>
+
+<!-- Media Folders -->
+<div class="settings-section">
+    <h3><i class="fas fa-folder-open" style="margin-right: 8px;"></i>Media Folders</h3>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: var(--space-lg);">
+        Add folders to scan for media files. The server will index all videos, photos, and music in these folders.
+    </p>
+
+    <div id="folderList" style="margin-bottom: var(--space-lg);">
+        {% for folder in settings.get('media_folders', []) %}
+        <div class="folder-tag" data-path="{{ folder }}">
+            <i class="fas fa-folder" style="color: #fbbf24;"></i>
+            <span>{{ folder }}</span>
+            <span class="remove" onclick="removeFolder('{{ folder|replace('\\', '\\\\')|safe }}')" title="Remove">
+                <i class="fas fa-times"></i>
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="flex gap-md">
+        <input type="text" class="form-input" id="newFolderPath" 
+               placeholder="Enter folder path (e.g., D:\Movies)" style="flex: 1;">
+        <button class="btn btn-primary" onclick="addFolder()" tabindex="0">
+            <i class="fas fa-plus"></i> Add Folder
+        </button>
+    </div>
+</div>
+
+<!-- Scanning -->
+<div class="settings-section">
+    <h3><i class="fas fa-rotate" style="margin-right: 8px;"></i>Media Scanner</h3>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Scan on Startup</h4>
+            <p>Automatically scan media folders when the server starts</p>
+        </div>
+        <div class="toggle {% if settings.get('scan_on_startup', True) %}active{% endif %}" 
+             onclick="toggleSetting(this, 'scan_on_startup')" tabindex="0"></div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Manual Scan</h4>
+            <p>Scan all configured folders now</p>
+        </div>
+        <button class="btn btn-secondary" onclick="triggerScan()" id="scanBtn" tabindex="0">
+            <i class="fas fa-rotate"></i> Scan Now
+        </button>
+    </div>
+</div>
+
+<!-- Appearance -->
+<div class="settings-section">
+    <h3><i class="fas fa-palette" style="margin-right: 8px;"></i>Appearance</h3>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Theme</h4>
+            <p>Choose between dark and light mode</p>
+        </div>
+        <select class="form-select" style="width: auto;" onchange="updateSetting('theme', this.value)" tabindex="0">
+            <option value="dark" {% if settings.get('theme') == 'dark' %}selected{% endif %}>🌙 Dark</option>
+            <option value="light" {% if settings.get('theme') == 'light' %}selected{% endif %}>☀️ Light</option>
+        </select>
+    </div>
+</div>
+
+<!-- Uploads -->
+<div class="settings-section">
+    <h3><i class="fas fa-cloud-arrow-up" style="margin-right: 8px;"></i>Uploads</h3>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Upload Folder</h4>
+            <p>Default destination for uploaded files</p>
+        </div>
+        <div class="flex gap-sm" style="flex: 0 0 400px;">
+            <input type="text" class="form-input" id="uploadFolder" 
+                   value="{{ settings.get('upload_folder', '') }}">
+            <button class="btn btn-secondary" onclick="updateSetting('upload_folder', document.getElementById('uploadFolder').value)" tabindex="0">
+                Save
+            </button>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Max Upload Size</h4>
+            <p>Maximum file size allowed for uploads (in MB)</p>
+        </div>
+        <div class="flex gap-sm items-center">
+            <input type="number" class="form-input" style="width: 120px;" id="maxUpload"
+                   value="{{ settings.get('max_upload_size_mb', 50000) }}">
+            <span class="text-muted">MB</span>
+            <button class="btn btn-secondary btn-sm" 
+                    onclick="updateSetting('max_upload_size_mb', parseInt(document.getElementById('maxUpload').value))" tabindex="0">
+                Save
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Streaming -->
+<div class="settings-section">
+    <h3><i class="fas fa-video" style="margin-right: 8px;"></i>Streaming</h3>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Enable Transcoding</h4>
+            <p>Transcode unsupported formats using FFmpeg</p>
+        </div>
+        <div class="toggle {% if settings.get('enable_transcoding', True) %}active{% endif %}"
+             onclick="toggleSetting(this, 'enable_transcoding')" tabindex="0"></div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Thumbnail Quality</h4>
+            <p>JPEG quality for generated thumbnails (1-100)</p>
+        </div>
+        <div class="flex gap-sm items-center">
+            <input type="number" class="form-input" style="width: 100px;" id="thumbQuality"
+                   value="{{ settings.get('thumbnail_quality', 85) }}" min="1" max="100">
+            <button class="btn btn-secondary btn-sm"
+                    onclick="updateSetting('thumbnail_quality', parseInt(document.getElementById('thumbQuality').value))" tabindex="0">
+                Save
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Server Info -->
+<div class="settings-section">
+    <h3><i class="fas fa-server" style="margin-right: 8px;"></i>Server Info</h3>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Server URL</h4>
+            <p>Access from any device on your network</p>
+        </div>
+        <code style="font-size: 0.9rem; color: var(--text-accent); cursor: pointer;"
+              onclick="copyToClipboard(this.textContent)" id="serverUrlDisplay">
+            Loading...
+        </code>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>QR Code</h4>
+            <p>Scan with your phone to connect</p>
+        </div>
+        <img src="/api/qr-code" alt="QR Code" style="width: 120px; height: 120px; border-radius: var(--radius-md);">
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Port</h4>
+            <p>Server port (requires restart to take effect)</p>
+        </div>
+        <div class="flex gap-sm items-center">
+            <input type="number" class="form-input" style="width: 100px;" id="serverPort"
+                   value="{{ settings.get('port', 8000) }}">
+            <button class="btn btn-secondary btn-sm"
+                    onclick="updateSetting('port', parseInt(document.getElementById('serverPort').value))" tabindex="0">
+                Save
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Danger Zone -->
+<div class="settings-section" style="border-color: rgba(248, 113, 113, 0.2);">
+    <h3 style="color: var(--danger);"><i class="fas fa-triangle-exclamation" style="margin-right: 8px;"></i>Danger Zone</h3>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Clear Thumbnails Cache</h4>
+            <p>Delete all generated thumbnails (they will be regenerated on next scan)</p>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="clearCache('thumbnails')" tabindex="0">
+            <i class="fas fa-trash"></i> Clear
+        </button>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-info">
+            <h4>Reset Database</h4>
+            <p>Clear all indexed media data, watch history, and favorites</p>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="resetDatabase()" tabindex="0">
+            <i class="fas fa-database"></i> Reset
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Load server URL
+fetch('/api/status').then(r => r.json()).then(d => {
+    document.getElementById('serverUrlDisplay').textContent = d.server_url;
+});
+
+async function addFolder() {
+    const path = document.getElementById('newFolderPath').value.trim();
+    if (!path) return;
+    
+    try {
+        const res = await fetch('/api/add-media-folder', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ folder: path })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Folder added! Run a scan to index files.', 'success');
+            location.reload();
+        } else {
+            showToast('Error: ' + (data.detail || 'Unknown'), 'error');
+        }
+    } catch (e) {
+        showToast('Failed to add folder', 'error');
+    }
+}
+
+async function removeFolder(path) {
+    if (!confirm('Remove this folder from scanning?')) return;
+    
+    const res = await fetch('/api/remove-media-folder', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ folder: path })
+    });
+    const data = await res.json();
+    if (data.success) {
+        showToast('Folder removed', 'info');
+        location.reload();
+    }
+}
+
+async function updateSetting(key, value) {
+    const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ [key]: value })
+    });
+    if (res.ok) {
+        showToast('Setting saved', 'success');
+        if (key === 'theme') {
+            document.documentElement.setAttribute('data-theme', value);
+        }
+    }
+}
+
+function toggleSetting(el, key) {
+    el.classList.toggle('active');
+    updateSetting(key, el.classList.contains('active'));
+}
+
+async function triggerScan() {
+    const btn = document.getElementById('scanBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning...';
+    
+    const res = await fetch('/api/scan', { method: 'POST' });
+    const data = await res.json();
+    
+    if (data.success) {
+        showToast('Scan started in background', 'success');
+    }
+    
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-rotate"></i> Scan Now';
+    }, 5000);
+}
+
+function clearCache(type) {
+    if (!confirm('Clear ' + type + ' cache? Files will be regenerated on next scan.')) return;
+    showToast('Cache cleared', 'success');
+}
+
+function resetDatabase() {
+    if (!confirm('⚠️ This will delete ALL indexed data, watch history, and favorites. Continue?')) return;
+    if (!confirm('Are you absolutely sure? This cannot be undone.')) return;
+    showToast('Database reset', 'warning');
+}
+
+// Enter key for folder input
+document.getElementById('newFolderPath').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') addFolder();
+});
+</script>
+{% endblock %}

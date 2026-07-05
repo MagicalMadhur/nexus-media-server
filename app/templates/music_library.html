@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="top-bar">
+    <div class="page-header">
+        <h2><i class="fas fa-music" style="color: var(--success); margin-right: 8px;"></i>Music Library</h2>
+        <p>{{ total_tracks }} tracks</p>
+    </div>
+    <div class="search-bar">
+        <i class="fas fa-search"></i>
+        <input type="text" id="musicSearch" placeholder="Search music..." value="{{ search }}"
+               oninput="searchMusic(this.value)" tabindex="0">
+    </div>
+</div>
+
+{% if tracks %}
+<!-- Track List -->
+<div class="glass-card">
+    <div class="glass-card-header" style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+        <div class="flex items-center gap-md" style="flex: 1;">
+            <span style="width: 40px; text-align: center;">#</span>
+            <span style="flex: 1;">Title</span>
+        </div>
+        <div class="file-list-columns">
+            <span style="min-width: 150px;">Artist</span>
+            <span style="min-width: 150px;">Album</span>
+            <span style="min-width: 60px;">Duration</span>
+            <span style="min-width: 30px;"></span>
+        </div>
+    </div>
+    {% for track in tracks %}
+    <div class="file-list-item music-track" 
+         data-src="{{ track.stream_url }}"
+         data-title="{{ track.display_title }}"
+         data-artist="{{ track.display_artist }}"
+         data-album="{{ track.display_album }}"
+         data-art="{{ track.album_art_url or '' }}"
+         data-id="{{ track.id }}"
+         onclick="playTrack(this, {{ loop.index0 }})" tabindex="0">
+        <span style="width: 40px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+            <span class="track-number">{{ loop.index }}</span>
+            <i class="fas fa-play track-play-icon" style="display: none; color: var(--accent-primary);"></i>
+        </span>
+        {% if track.album_art_url %}
+        <img src="{{ track.album_art_url }}" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">
+        {% else %}
+        <div style="width: 40px; height: 40px; border-radius: 6px; background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center;">
+            <i class="fas fa-music" style="color: var(--text-muted); font-size: 0.8rem;"></i>
+        </div>
+        {% endif %}
+        <div class="file-details" style="min-width: 0;">
+            <div class="file-name" style="font-weight: 600;">{{ track.display_title }}</div>
+        </div>
+        <div class="file-list-columns">
+            <span style="min-width: 150px;">{{ track.display_artist }}</span>
+            <span style="min-width: 150px;">{{ track.display_album }}</span>
+            <span style="min-width: 60px;">{{ track.duration_formatted }}</span>
+            <button class="btn btn-ghost btn-sm" 
+                    onclick="event.stopPropagation(); toggleMusicFav({{ track.id }}, this);" tabindex="0">
+                <i class="fas fa-heart" style="color: {% if track.is_favorite %}var(--danger){% else %}var(--text-muted){% endif %};"></i>
+            </button>
+            <div style="position: relative;">
+                <button class="btn btn-ghost btn-sm" onclick="event.preventDefault(); event.stopPropagation(); toggleCardMenu(this)">
+                    <i class="fas fa-ellipsis-v"></i>
+                </button>
+                <div class="card-menu" style="right: 0; bottom: auto; top: 100%;">
+                    <div class="card-menu-item" onclick="event.preventDefault(); event.stopPropagation(); showRenameModal('{{ track.path|replace('\\', '\\\\')|replace('\'', '\\\'') }}', '{{ track.filename|replace('\'', '\\\'') }}')">
+                        <i class="fas fa-pen"></i> Rename
+                    </div>
+                    <div class="card-menu-item" onclick="event.preventDefault(); event.stopPropagation(); window.open('/api/stream/{{ track.path|urlencode }}', '_blank')">
+                        <i class="fas fa-download"></i> Download
+                    </div>
+                    <div class="card-menu-item danger" onclick="event.preventDefault(); event.stopPropagation(); deleteFile('{{ track.path|replace('\\', '\\\\')|replace('\'', '\\\'') }}', '{{ track.filename|replace('\'', '\\\'') }}')">
+                        <i class="fas fa-trash"></i> Delete
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Music Player Bar -->
+<div class="music-player-bar" id="musicPlayerBar">
+    <div class="music-player-info">
+        <img class="music-player-art" id="playerArt" src="" alt="Album Art">
+        <div>
+            <div style="font-weight: 600; font-size: 0.9rem;" id="playerTitle">—</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);" id="playerArtist">—</div>
+        </div>
+    </div>
+    <div class="music-player-controls">
+        <div class="music-player-buttons">
+            <button class="btn btn-ghost btn-icon" onclick="musicShuffle()" id="shuffleBtn" tabindex="0">
+                <i class="fas fa-shuffle"></i>
+            </button>
+            <button class="btn btn-ghost btn-icon" onclick="musicPrev()" tabindex="0">
+                <i class="fas fa-backward-step"></i>
+            </button>
+            <button class="btn btn-primary btn-icon" onclick="musicTogglePlay()" id="musicPlayBtn" tabindex="0"
+                    style="border-radius: 50%;">
+                <i class="fas fa-play" id="musicPlayIcon"></i>
+            </button>
+            <button class="btn btn-ghost btn-icon" onclick="musicNext()" tabindex="0">
+                <i class="fas fa-forward-step"></i>
+            </button>
+            <button class="btn btn-ghost btn-icon" onclick="musicRepeat()" id="repeatBtn" tabindex="0">
+                <i class="fas fa-repeat"></i>
+            </button>
+        </div>
+        <div class="music-progress">
+            <span class="music-time" id="musicCurrentTime">0:00</span>
+            <div class="music-progress-bar" id="musicProgressBar" onclick="musicSeek(event)">
+                <div class="music-progress-fill" id="musicProgressFill" style="width: 0%"></div>
+            </div>
+            <span class="music-time" id="musicTotalTime">0:00</span>
+        </div>
+    </div>
+    <div class="music-player-volume">
+        <button class="btn btn-ghost btn-icon" onclick="musicToggleMute()" tabindex="0">
+            <i class="fas fa-volume-high" id="musicVolumeIcon"></i>
+        </button>
+        <div class="music-progress-bar" style="flex: 1;" onclick="musicSetVolume(event)" id="musicVolumeBar">
+            <div class="music-progress-fill" id="musicVolumeFill" style="width: 100%"></div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="empty-state">
+    <i class="fas fa-music"></i>
+    <h3>No music found</h3>
+    <p>Add media folders in Settings to discover your music collection.</p>
+    <a href="/settings" class="btn btn-primary btn-lg mt-lg"><i class="fas fa-folder-plus"></i> Add Folders</a>
+</div>
+{% endif %}
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="pagination" style="margin-bottom: 80px;">
+    {% if current_page > 1 %}
+    <a href="?page={{ current_page - 1 }}" tabindex="0"><i class="fas fa-chevron-left"></i></a>
+    {% endif %}
+    {% for p in range(1, total_pages + 1) %}
+    {% if p == current_page %}<span class="active">{{ p }}</span>
+    {% elif p <= 3 or p >= total_pages - 2 or (p >= current_page - 1 and p <= current_page + 1) %}
+    <a href="?page={{ p }}" tabindex="0">{{ p }}</a>
+    {% elif p == 4 %}<span>...</span>{% endif %}
+    {% endfor %}
+    {% if current_page < total_pages %}
+    <a href="?page={{ current_page + 1 }}" tabindex="0"><i class="fas fa-chevron-right"></i></a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Music Player State
+const audio = new Audio();
+const tracks = document.querySelectorAll('.music-track');
+let currentTrackIdx = -1;
+let isShuffled = false;
+let repeatMode = 0; // 0=off, 1=all, 2=one
+let playOrder = [];
+
+// Init play order
+for (let i = 0; i < tracks.length; i++) playOrder.push(i);
+
+function playTrack(el, idx) {
+    currentTrackIdx = idx;
+    const src = el.dataset.src;
+    const title = el.dataset.title;
+    const artist = el.dataset.artist;
+    const art = el.dataset.art;
+
+    audio.src = src;
+    audio.play();
+
+    document.getElementById('playerTitle').textContent = title;
+    document.getElementById('playerArtist').textContent = artist;
+    document.getElementById('playerArt').src = art || '';
+    document.getElementById('playerArt').style.display = art ? '' : 'none';
+    document.getElementById('musicPlayIcon').className = 'fas fa-pause';
+    document.getElementById('musicPlayerBar').classList.add('active');
+
+    // Highlight active track
+    tracks.forEach(t => t.style.background = '');
+    el.style.background = 'var(--bg-card-hover)';
+
+    // Media Session
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title, artist });
+        navigator.mediaSession.setActionHandler('play', () => audio.play());
+        navigator.mediaSession.setActionHandler('pause', () => audio.pause());
+        navigator.mediaSession.setActionHandler('previoustrack', musicPrev);
+        navigator.mediaSession.setActionHandler('nexttrack', musicNext);
+    }
+}
+
+function musicTogglePlay() {
+    if (audio.paused) { audio.play(); document.getElementById('musicPlayIcon').className = 'fas fa-pause'; }
+    else { audio.pause(); document.getElementById('musicPlayIcon').className = 'fas fa-play'; }
+}
+
+function musicNext() {
+    let nextIdx;
+    if (isShuffled) {
+        nextIdx = Math.floor(Math.random() * tracks.length);
+    } else {
+        nextIdx = (currentTrackIdx + 1) % tracks.length;
+    }
+    playTrack(tracks[nextIdx], nextIdx);
+}
+
+function musicPrev() {
+    if (audio.currentTime > 3) { audio.currentTime = 0; return; }
+    const prevIdx = (currentTrackIdx - 1 + tracks.length) % tracks.length;
+    playTrack(tracks[prevIdx], prevIdx);
+}
+
+function musicShuffle() {
+    isShuffled = !isShuffled;
+    document.getElementById('shuffleBtn').style.color = isShuffled ? 'var(--accent-primary)' : '';
+}
+
+function musicRepeat() {
+    repeatMode = (repeatMode + 1) % 3;
+    const btn = document.getElementById('repeatBtn');
+    btn.style.color = repeatMode ? 'var(--accent-primary)' : '';
+    btn.querySelector('i').className = repeatMode === 2 ? 'fas fa-repeat' : 'fas fa-repeat';
+}
+
+audio.addEventListener('ended', () => {
+    if (repeatMode === 2) { audio.play(); return; }
+    if (repeatMode === 1 || currentTrackIdx < tracks.length - 1) musicNext();
+});
+
+audio.addEventListener('timeupdate', () => {
+    const pct = (audio.currentTime / audio.duration) * 100;
+    document.getElementById('musicProgressFill').style.width = pct + '%';
+    document.getElementById('musicCurrentTime').textContent = formatTime(audio.currentTime);
+});
+
+audio.addEventListener('loadedmetadata', () => {
+    document.getElementById('musicTotalTime').textContent = formatTime(audio.duration);
+});
+
+function musicSeek(e) {
+    const bar = document.getElementById('musicProgressBar');
+    const rect = bar.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    audio.currentTime = pct * audio.duration;
+}
+
+function musicToggleMute() {
+    audio.muted = !audio.muted;
+    document.getElementById('musicVolumeIcon').className = audio.muted ? 'fas fa-volume-xmark' : 'fas fa-volume-high';
+}
+
+function musicSetVolume(e) {
+    const bar = document.getElementById('musicVolumeBar');
+    const rect = bar.getBoundingClientRect();
+    audio.volume = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    document.getElementById('musicVolumeFill').style.width = (audio.volume * 100) + '%';
+    audio.muted = false;
+}
+
+function formatTime(s) {
+    if (!s || isNaN(s)) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+let searchTimeout;
+function searchMusic(q) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (q) params.set('search', q);
+        else params.delete('search');
+        params.set('page', '1');
+        window.location.search = params.toString();
+    }, 500);
+}
+
+async function toggleMusicFav(id, btn) {
+    try {
+        const res = await fetch('/api/favorite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_id: id })
+        });
+        const data = await res.json();
+        const icon = btn.querySelector('i');
+        if (data.is_favorite) {
+            icon.style.color = 'var(--danger)';
+        } else {
+            icon.style.color = 'var(--text-muted)';
+        }
+    } catch (e) {}
+}
+</script>
+{% endblock %}

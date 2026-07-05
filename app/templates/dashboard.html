@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<!-- Include PDF.js for local password check before casting -->
+<script src="/static/js/pdf.min.js"></script>
+<script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/js/pdf.worker.min.js';
+</script>
+{% endblock %}
+
+{% block content %}
+<!-- Top Bar -->
+<div class="top-bar">
+    <div class="page-header">
+        <h2>🏠 Dashboard</h2>
+        <p>Your personal media hub</p>
+    </div>
+    <div class="search-bar">
+        <i class="fas fa-search"></i>
+        <input type="text" id="globalSearch" placeholder="Search files, videos, photos..." 
+               autocomplete="off" tabindex="0"
+               oninput="handleSearch(this.value)">
+    </div>
+    <div class="top-bar-actions">
+        <button class="btn btn-ghost btn-icon" onclick="toggleTheme()" title="Toggle theme" tabindex="0">
+            <i class="fas fa-moon" id="themeIcon"></i>
+        </button>
+        <a href="/api/qr-code" target="_blank" class="btn btn-ghost btn-icon" title="QR Code" tabindex="0">
+            <i class="fas fa-qrcode"></i>
+        </a>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="grid grid-4 mb-lg" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
+    <a href="/videos" class="stat-card" tabindex="0">
+        <div class="stat-icon videos"><i class="fas fa-film"></i></div>
+        <div class="stat-info">
+            <h3>{{ stats.video_count|default(0) }}</h3>
+            <p>Videos · {{ video_size_formatted }}</p>
+        </div>
+    </a>
+    <a href="/photos" class="stat-card" tabindex="0">
+        <div class="stat-icon photos"><i class="fas fa-images"></i></div>
+        <div class="stat-info">
+            <h3>{{ stats.image_count|default(0) }}</h3>
+            <p>Photos · {{ image_size_formatted }}</p>
+        </div>
+    </a>
+    <a href="/music" class="stat-card" tabindex="0">
+        <div class="stat-icon music"><i class="fas fa-music"></i></div>
+        <div class="stat-info">
+            <h3>{{ stats.audio_count|default(0) }}</h3>
+            <p>Music · {{ audio_size_formatted }}</p>
+        </div>
+    </a>
+    <a href="/explorer" class="stat-card" tabindex="0">
+        <div class="stat-icon files"><i class="fas fa-folder-open"></i></div>
+        <div class="stat-info">
+            <h3>{{ stats.total_count|default(0) }}</h3>
+            <p>Total Files · {{ total_size_formatted }}</p>
+        </div>
+    </a>
+</div>
+
+<!-- Quick Actions Row -->
+<div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); margin-bottom: var(--space-xl);">
+    <a href="/explorer" class="stat-card" style="padding: var(--space-md);" tabindex="0">
+        <div class="stat-icon uploads" style="width: 40px; height: 40px; font-size: 1rem;"><i class="fas fa-cloud-arrow-up"></i></div>
+        <div class="stat-info"><p style="font-weight: 600; color: var(--text-primary);">Upload</p></div>
+    </a>
+    <a href="/settings" class="stat-card" style="padding: var(--space-md);" tabindex="0">
+        <div class="stat-icon settings" style="width: 40px; height: 40px; font-size: 1rem;"><i class="fas fa-gear"></i></div>
+        <div class="stat-info"><p style="font-weight: 600; color: var(--text-primary);">Settings</p></div>
+    </a>
+    <button class="stat-card" style="padding: var(--space-md); border: none; text-align: left; width: 100%;" 
+            onclick="triggerScan()" tabindex="0">
+        <div class="stat-icon recent" style="width: 40px; height: 40px; font-size: 1rem;"><i class="fas fa-rotate"></i></div>
+        <div class="stat-info"><p style="font-weight: 600; color: var(--text-primary);">Scan</p></div>
+    </button>
+    <a href="/live" class="stat-card" style="padding: var(--space-md);" tabindex="0">
+        <div class="stat-icon" style="width: 40px; height: 40px; font-size: 1rem; background: rgba(239, 68, 68, 0.1); color: #ef4444;"><i class="fas fa-broadcast-tower"></i></div>
+        <div class="stat-info"><p style="font-weight: 600; color: var(--text-primary);">Live Share</p></div>
+    </a>
+    <button class="stat-card" style="padding: var(--space-md); border: none; text-align: left; width: 100%; background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%); border: 1px solid var(--accent-primary);" 
+            onclick="document.getElementById('magicCastInput').click()" tabindex="0">
+        <div class="stat-icon magic" style="width: 40px; height: 40px; font-size: 1rem; background: var(--accent-gradient); color: white;"><i class="fas fa-magic"></i></div>
+        <div class="stat-info"><p style="font-weight: 700; color: var(--accent-primary);">Magic Cast</p></div>
+    </button>
+</div>
+
+<!-- Hidden input for Magic Cast -->
+<input type="file" id="magicCastInput" style="display: none;" accept="image/*,application/pdf" onchange="uploadMagicCast(this)">
+
+<script>
+async function uploadMagicCast(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    let pdfPassword = null;
+
+    // Check if it's a PDF and needs a password
+    if (file.type === 'application/pdf') {
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+            
+            // This is a neat trick: if onPassword fires, it needs a password
+            await new Promise((resolve, reject) => {
+                loadingTask.onPassword = function(updatePassword, reason) {
+                    const pwd = prompt(reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD 
+                        ? "Incorrect password. Please try again:" 
+                        : "This PDF is password protected. Enter password to cast:");
+                    if (pwd) {
+                        pdfPassword = pwd;
+                        updatePassword(pwd);
+                    } else {
+                        reject(new Error("Password cancelled"));
+                    }
+                };
+                
+                loadingTask.promise.then(resolve).catch(reject);
+            });
+        } catch (e) {
+            if (e.message === "Password cancelled") {
+                input.value = '';
+                return; // User cancelled, abort cast
+            }
+            console.warn("Could not parse PDF locally, continuing anyway...", e);
+        }
+    }
+    
+    showToast('Casting to TV...', 'info');
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    if (pdfPassword) {
+        formData.append('password', pdfPassword);
+    }
+    
+    try {
+        const response = await fetch('/api/cast/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showToast('Cast successful!', 'success');
+        } else {
+            showToast('Cast failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('Error casting file.', 'error');
+    }
+    
+    // Clear input
+    input.value = '';
+}
+</script>
+
+<!-- Continue Watching -->
+{% if continue_watching %}
+<div class="mb-lg">
+    <div class="flex items-center justify-between mb-md">
+        <h3 style="font-size: 1.2rem; font-weight: 700;">
+            <i class="fas fa-play-circle" style="color: var(--accent-primary); margin-right: 8px;"></i>
+            Continue Watching
+        </h3>
+        <a href="/?tab=history" class="btn btn-ghost btn-sm">View All</a>
+    </div>
+    <div class="grid grid-auto">
+        {% for video in continue_watching %}
+        <a href="/player/{{ video.id }}" class="media-card" tabindex="0">
+            <div class="media-thumbnail">
+                {% if video.thumbnail_path %}
+                <img src="/api/thumbnail/{{ video.id }}" alt="{{ video.filename }}" loading="lazy">
+                {% else %}
+                <div class="placeholder-icon"><i class="fas fa-film"></i></div>
+                {% endif %}
+                <div class="media-overlay">
+                    <div class="media-play-btn"><i class="fas fa-play"></i></div>
+                </div>
+                {% if video.duration %}
+                <span class="media-duration">{{ video.duration|format_duration }}</span>
+                {% endif %}
+            </div>
+            <div class="media-progress-bar">
+                <div class="media-progress-fill" style="width: {{ video.progress * 100 }}%"></div>
+            </div>
+            <div class="media-info">
+                <div class="media-title">{{ video.filename }}</div>
+                <div class="media-meta">
+                    <span><i class="fas fa-clock"></i> {{ ((video.duration or 0) - video.position)|format_duration }} left</span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Recently Added -->
+{% if recently_added %}
+<div class="mb-lg">
+    <div class="flex items-center justify-between mb-md">
+        <h3 style="font-size: 1.2rem; font-weight: 700;">
+            <i class="fas fa-clock" style="color: var(--info); margin-right: 8px;"></i>
+            Recently Added
+        </h3>
+    </div>
+    <div class="grid grid-auto">
+        {% for item in recently_added %}
+        <a href="{% if item.file_type == 'video' %}/player/{{ item.id }}{% elif item.file_type == 'image' %}/photos{% else %}/explorer/{{ item.parent_folder }}{% endif %}" 
+           class="media-card" tabindex="0">
+            <div class="media-thumbnail">
+                {% if item.thumbnail_path %}
+                <img src="/api/thumbnail/{{ item.id }}" alt="{{ item.filename }}" loading="lazy">
+                {% else %}
+                <div class="placeholder-icon">
+                    <i class="fas {% if item.file_type == 'video' %}fa-film{% elif item.file_type == 'audio' %}fa-music{% elif item.file_type == 'image' %}fa-image{% else %}fa-file{% endif %}"></i>
+                </div>
+                {% endif %}
+                {% if item.file_type == 'video' %}
+                <div class="media-overlay">
+                    <div class="media-play-btn"><i class="fas fa-play"></i></div>
+                </div>
+                {% endif %}
+                {% if item.duration %}
+                <span class="media-duration">{{ item.duration|format_duration }}</span>
+                {% endif %}
+            </div>
+            <div class="media-info">
+                <div class="media-title">{{ item.filename }}</div>
+                <div class="media-meta">
+                    <span>{{ item.size|format_size }}</span>
+                    <span>{{ item.file_type|capitalize }}</span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Empty State (no media configured) -->
+{% if stats.total_count == 0 %}
+<div class="empty-state" style="margin-top: var(--space-3xl);">
+    <i class="fas fa-folder-plus"></i>
+    <h3>No media files found</h3>
+    <p>Add media folders in Settings to start browsing your files. You can also upload files directly.</p>
+    <div style="margin-top: var(--space-lg); display: flex; gap: var(--space-md); justify-content: center;">
+        <a href="/settings" class="btn btn-primary btn-lg">
+            <i class="fas fa-folder-plus"></i> Add Folders
+        </a>
+        <a href="/explorer" class="btn btn-secondary btn-lg">
+            <i class="fas fa-cloud-arrow-up"></i> Upload Files
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<!-- Server Access QR -->
+<div style="margin-top: var(--space-2xl); text-align: center;">
+    <div class="glass-card" style="display: inline-block; padding: var(--space-lg) var(--space-xl);">
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: var(--space-sm);">
+            📱 Access from any device on your network:
+        </p>
+        <code style="font-size: 1rem; color: var(--text-accent); cursor: pointer; font-weight: 600;"
+              onclick="copyToClipboard('{{ server_url }}')">
+            {{ server_url }}
+        </code>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function triggerScan() {
+    showToast('Starting media scan...', 'info');
+    try {
+        const res = await fetch('/api/scan', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Scan started! This may take a few minutes.', 'success');
+        } else {
+            showToast('Scan failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (e) {
+        showToast('Could not start scan', 'error');
+    }
+}
+</script>
+{% endblock %}

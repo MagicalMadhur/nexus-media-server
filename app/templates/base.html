@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ theme|default('dark') }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta name="description" content="Home Media Server — Stream, browse, and manage your media files on any device">
+    <title>{{ page_title|default('Home') }} — Media Server</title>
+
+    <!-- PWA / Web App Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0f0f1a">
+    
+    <!-- iOS Specific PWA Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="NexusMedia">
+    <link rel="apple-touch-icon" href="/static/icons/app-icon-192.png">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="/static/css/main.css">
+    {% block extra_css %}{% endblock %}
+
+    <!-- Font Awesome (CDN with local fallback) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" 
+          crossorigin="anonymous" referrerpolicy="no-referrer">
+
+    <style>
+        /* Inline critical font */
+        @font-face {
+            font-family: 'Inter';
+            font-display: swap;
+            src: local('Inter');
+        }
+    </style>
+</head>
+<body>
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Sidebar Toggle (Mobile) -->
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle menu" tabindex="0">
+        <i class="fas fa-bars"></i>
+    </button>
+
+    <!-- Sidebar Overlay (Mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-logo">
+                <div class="logo-icon">
+                    <i class="fas fa-play"></i>
+                </div>
+                <h1>NexusMedia</h1>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Main</div>
+                    <a href="/" class="nav-item {% if page_title == 'Dashboard' %}active{% endif %}" tabindex="0">
+                        <i class="fas fa-house"></i>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="/explorer" class="nav-item {% if page_title == 'File Explorer' %}active{% endif %}" tabindex="0">
+                        <i class="fas fa-folder-open"></i>
+                        <span>File Explorer</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Media</div>
+                    <a href="/videos" class="nav-item {% if page_title == 'Video Library' %}active{% endif %}" tabindex="0">
+                        <i class="fas fa-film"></i>
+                        <span>Videos</span>
+                    </a>
+                    <a href="/photos" class="nav-item {% if page_title == 'Photo Gallery' %}active{% endif %}" tabindex="0">
+                        <i class="fas fa-images"></i>
+                        <span>Photos</span>
+                    </a>
+                    <a href="/music" class="nav-item {% if page_title == 'Music Library' %}active{% endif %}" tabindex="0">
+                        <i class="fas fa-music"></i>
+                        <span>Music</span>
+                    </a>
+                    <a href="/documents" class="nav-item {% if page_title == 'Documents' %}active{% endif %}" tabindex="0">
+                        <i class="fas fa-file-alt"></i>
+                        <span>Documents</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Quick Access</div>
+                    <a href="/explorer" class="nav-item" id="navUpload" tabindex="0"
+                       onclick="event.preventDefault(); document.getElementById('globalUploadInput')?.click();">
+                        <i class="fas fa-cloud-arrow-up"></i>
+                        <span>Upload</span>
+                    </a>
+                    <a href="/?tab=favorites" class="nav-item" tabindex="0">
+                        <i class="fas fa-star"></i>
+                        <span>Favorites</span>
+                    </a>
+                    <a href="/?tab=history" class="nav-item" tabindex="0">
+                        <i class="fas fa-clock-rotate-left"></i>
+                        <span>History</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">System</div>
+                    <a href="/settings" class="nav-item {% if page_title == 'Settings' %}active{% endif %}" tabindex="0">
+                        <i class="fas fa-gear"></i>
+                        <span>Settings</span>
+                    </a>
+                </div>
+            </nav>
+
+            <!-- Server Info (Bottom of sidebar) -->
+            <div style="padding: var(--space-md) var(--space-lg); border-top: 1px solid var(--border-glass); margin-top: auto;">
+                <div style="font-size: 0.7rem; color: var(--text-muted);">
+                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                        <span style="width: 6px; height: 6px; background: var(--success); border-radius: 50; display: inline-block;"></span>
+                        Server Online
+                    </div>
+                    <div id="serverUrl" style="color: var(--text-accent); cursor: pointer;" title="Click to copy">
+                        {{ server_url|default('http://localhost:8000') }}
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Hidden global upload input -->
+    <input type="file" id="globalUploadInput" multiple style="display: none;" 
+           onchange="handleGlobalUpload(this.files)">
+
+    <!-- Global Search Results Dropdown -->
+    <div class="search-results-dropdown" id="searchDropdown"></div>
+
+    <!-- Context Menu -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" data-action="open"><i class="fas fa-external-link-alt"></i> Open</div>
+        <div class="context-menu-item" data-action="rename"><i class="fas fa-pen"></i> Rename</div>
+        <div class="context-menu-item" data-action="copy"><i class="fas fa-copy"></i> Copy</div>
+        <div class="context-menu-item" data-action="move"><i class="fas fa-arrows-alt"></i> Move</div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" data-action="favorite"><i class="fas fa-star"></i> Favorite</div>
+        <div class="context-menu-item" data-action="download"><i class="fas fa-download"></i> Download</div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item danger" data-action="delete"><i class="fas fa-trash"></i> Delete</div>
+    </div>
+
+    <!-- Modal Template -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 id="modalTitle">Modal</h3>
+                <button class="btn btn-ghost btn-icon" onclick="closeModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+            <div class="modal-footer" id="modalFooter"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/app.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,641 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="top-bar">
+    <div class="page-header">
+        <h2><i class="fas fa-folder-open" style="color: #fbbf24; margin-right: 8px;"></i>File Explorer</h2>
+    </div>
+    <div class="search-bar">
+        <i class="fas fa-search"></i>
+        <input type="text" id="fileSearch" placeholder="Search in this folder..." 
+               oninput="filterFiles(this.value)" tabindex="0">
+    </div>
+    <div class="top-bar-actions">
+        <button class="btn btn-secondary" onclick="toggleView()" id="viewToggle" title="Toggle view" tabindex="0">
+            <i class="fas fa-grip" id="viewIcon"></i>
+        </button>
+        <button class="btn btn-secondary" onclick="showCreateFolderModal()" tabindex="0">
+            <i class="fas fa-folder-plus"></i> New Folder
+        </button>
+        <button class="btn btn-primary" onclick="document.getElementById('uploadInput').click()" tabindex="0">
+            <i class="fas fa-cloud-arrow-up"></i> Upload
+        </button>
+    </div>
+</div>
+
+<!-- Breadcrumb -->
+<div class="breadcrumb">
+    {% for crumb in breadcrumbs %}
+    {% if loop.last %}
+    <span class="current">{{ crumb.name }}</span>
+    {% else %}
+    <a href="/explorer/{{ crumb.path }}" tabindex="0">{{ crumb.name }}</a>
+    <span class="separator"><i class="fas fa-chevron-right"></i></span>
+    {% endif %}
+    {% endfor %}
+</div>
+
+<!-- Upload Zone -->
+<div class="upload-zone" id="uploadZone" style="display: none; margin-bottom: var(--space-lg);">
+    <i class="fas fa-cloud-arrow-up"></i>
+    <h3>Drop files here to upload</h3>
+    <p>or click to browse</p>
+</div>
+<input type="file" id="uploadInput" multiple style="display: none;" 
+       onchange="uploadFiles(this.files)">
+
+<!-- Upload Progress -->
+<div class="upload-progress" id="uploadProgress" style="display: none; margin-bottom: var(--space-lg);"></div>
+
+<!-- File Grid -->
+{% if items %}
+<div class="grid grid-auto-sm" id="fileGrid">
+    {% for item in items %}
+    <div class="file-grid-item" 
+         data-path="{{ item.path }}" 
+         data-name="{{ item.name }}"
+         data-isdir="{{ item.is_dir|lower }}"
+         onclick="handleFileClick(this)"
+         ondblclick="handleFileDblClick(this)"
+         oncontextmenu="showContextMenu(event, this)"
+         tabindex="0">
+        <i class="fas {{ item.icon }} file-icon {% if item.is_dir %}folder{% elif item.is_video %}video{% elif item.is_audio %}audio{% elif item.is_image %}image{% else %}document{% endif %}"></i>
+        <div class="file-name">{{ item.name }}</div>
+        {% if not item.is_dir %}
+        <div class="file-size">{{ item.size_formatted }}</div>
+        {% endif %}
+        
+        <button class="menu-btn" onclick="event.preventDefault(); event.stopPropagation(); toggleCardMenu(this)">
+            <i class="fas fa-ellipsis-v"></i>
+        </button>
+        <div class="card-menu">
+            <div class="card-menu-item" onclick="event.preventDefault(); event.stopPropagation(); showRenameModal('{{ item.path|replace('\\', '\\\\')|replace('\'', '\\\'') }}', '{{ item.name|replace('\'', '\\\'') }}')">
+                <i class="fas fa-pen"></i> Rename
+            </div>
+            {% if not item.is_dir %}
+            <div class="card-menu-item" onclick="event.preventDefault(); event.stopPropagation(); window.open('/api/stream/{{ item.path|urlencode }}', '_blank')">
+                <i class="fas fa-download"></i> Download
+            </div>
+            {% endif %}
+            <div class="card-menu-item danger" onclick="event.preventDefault(); event.stopPropagation(); deleteFile('{{ item.path|replace('\\', '\\\\')|replace('\'', '\\\'') }}', '{{ item.name|replace('\'', '\\\'') }}')">
+                <i class="fas fa-trash"></i> Delete
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- List View (hidden by default) -->
+<div class="glass-card" id="fileList" style="display: none;">
+    {% for item in items %}
+    <div class="file-list-item"
+         data-path="{{ item.path }}"
+         data-name="{{ item.name }}"
+         data-isdir="{{ item.is_dir|lower }}"
+         onclick="handleFileClick(this)"
+         ondblclick="handleFileDblClick(this)"
+         oncontextmenu="showContextMenu(event, this)"
+         tabindex="0">
+        <i class="fas {{ item.icon }} file-icon {% if item.is_dir %}folder{% elif item.is_video %}video{% elif item.is_audio %}audio{% elif item.is_image %}image{% endif %}"></i>
+        <div class="file-details">
+            <div class="file-name">{{ item.name }}</div>
+        </div>
+        <div class="file-list-columns">
+            <span style="min-width: 80px;">{{ item.size_formatted }}</span>
+            <span style="min-width: 130px;">{{ item.modified_formatted }}</span>
+            <span style="min-width: 60px;">{{ item.extension }}</span>
+            <div style="position: relative;">
+                <button class="btn btn-ghost btn-sm" onclick="event.preventDefault(); event.stopPropagation(); toggleCardMenu(this)">
+                    <i class="fas fa-ellipsis-v"></i>
+                </button>
+                <div class="card-menu" style="right: 0; bottom: auto; top: 100%;">
+                    <div class="card-menu-item" onclick="event.preventDefault(); event.stopPropagation(); showRenameModal('{{ item.path|replace('\\', '\\\\')|replace('\'', '\\\'') }}', '{{ item.name|replace('\'', '\\\'') }}')">
+                        <i class="fas fa-pen"></i> Rename
+                    </div>
+                    {% if not item.is_dir %}
+                    <div class="card-menu-item" onclick="event.preventDefault(); event.stopPropagation(); window.open('/api/stream/{{ item.path|urlencode }}', '_blank')">
+                        <i class="fas fa-download"></i> Download
+                    </div>
+                    {% endif %}
+                    <div class="card-menu-item danger" onclick="event.preventDefault(); event.stopPropagation(); deleteFile('{{ item.path|replace('\\', '\\\\')|replace('\'', '\\\'') }}', '{{ item.name|replace('\'', '\\\'') }}')">
+                        <i class="fas fa-trash"></i> Delete
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <i class="fas fa-folder-open"></i>
+    <h3>This folder is empty</h3>
+    <p>Upload files or create a new folder to get started.</p>
+</div>
+{% endif %}
+
+<!-- Media Viewer Modal -->
+<div id="mediaViewerModal" class="modal" style="display: none; z-index: 1000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f0f1a;">
+    
+    <!-- Top Toolbar (Google Drive style) -->
+    <div id="mediaViewerToolbar" style="position: absolute; top: 0; left: 0; width: 100%; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%); z-index: 1010; box-sizing: border-box;">
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <button onclick="closeMediaViewer()" style="background: none; border: none; color: white; cursor: pointer; font-size: 1.2rem; padding: 8px; border-radius: 50%; outline: none;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Close">
+                <i class="fas fa-arrow-left"></i>
+            </button>
+            <span id="mediaViewerTitle" style="color: white; font-weight: 500; font-size: 1.1rem; text-shadow: 0 1px 3px rgba(0,0,0,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50vw;">Document</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <a id="mediaViewerDownload" href="#" download style="background: none; border: none; color: white; cursor: pointer; font-size: 1.2rem; padding: 10px; border-radius: 50%; text-decoration: none; display: flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Download">
+                <i class="fas fa-download"></i>
+            </a>
+            <button onclick="toggleFullscreen()" style="background: none; border: none; color: white; cursor: pointer; font-size: 1.2rem; padding: 10px; border-radius: 50%; display: flex; align-items: center; justify-content: center; outline: none;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Full Screen">
+                <i class="fas fa-expand" id="fullscreenIcon"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Content Area -->
+    <div id="mediaViewerContent" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0; padding-top: 60px; box-sizing: border-box;">
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const currentPath = '{{ current_path|replace("\\", "\\\\")|safe }}';
+let viewMode = 'grid';
+let selectedItems = new Set();
+
+// --- View Toggle ---
+function toggleView() {
+    viewMode = viewMode === 'grid' ? 'list' : 'grid';
+    document.getElementById('fileGrid').style.display = viewMode === 'grid' ? '' : 'none';
+    document.getElementById('fileList').style.display = viewMode === 'list' ? '' : 'none';
+    document.getElementById('viewIcon').className = viewMode === 'grid' ? 'fas fa-list' : 'fas fa-grip';
+}
+
+// --- File Click ---
+function handleFileClick(el) {
+    // Toggle selection
+    if (event.ctrlKey || event.metaKey) {
+        el.classList.toggle('selected');
+        const path = el.dataset.path;
+        if (selectedItems.has(path)) selectedItems.delete(path);
+        else selectedItems.add(path);
+    } else {
+        // Clear other selections
+        document.querySelectorAll('.selected').forEach(e => e.classList.remove('selected'));
+        selectedItems.clear();
+        el.classList.add('selected');
+        selectedItems.add(el.dataset.path);
+    }
+}
+
+function handleFileDblClick(el) {
+    const path = el.dataset.path;
+    const isDir = el.dataset.isdir === 'true';
+
+    if (isDir) {
+        window.location.href = '/explorer/' + encodeURIComponent(path);
+    } else {
+        // Open file based on type
+        const name = el.dataset.name.toLowerCase();
+        if (/\.(mp4|mkv|avi|mov|flv|webm|wmv)$/i.test(name)) {
+            // Find media ID and open player
+            window.location.href = '/videos?search=' + encodeURIComponent(el.dataset.name);
+        } else if (/\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(name)) {
+            openMediaViewer(path, 'image', el.dataset.name);
+        } else if (/\.(pdf|txt)$/i.test(name)) {
+            openMediaViewer(path, 'pdf', el.dataset.name);
+        } else {
+            window.open('/api/stream/' + encodeURIComponent(path), '_blank');
+        }
+    }
+}
+
+// --- Search/Filter ---
+function filterFiles(query) {
+    const q = query.toLowerCase();
+    const items = document.querySelectorAll('.file-grid-item, .file-list-item');
+    items.forEach(item => {
+        const name = item.dataset.name.toLowerCase();
+        item.style.display = name.includes(q) ? '' : 'none';
+    });
+}
+
+// --- Upload ---
+const uploadZone = document.getElementById('uploadZone');
+
+// Drag and drop
+document.body.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.style.display = 'block';
+    uploadZone.classList.add('dragover');
+});
+
+document.body.addEventListener('dragleave', (e) => {
+    if (!e.relatedTarget || e.relatedTarget === document.documentElement) {
+        uploadZone.classList.remove('dragover');
+    }
+});
+
+document.body.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    uploadZone.style.display = 'none';
+    if (e.dataTransfer.files.length) {
+        uploadFiles(e.dataTransfer.files);
+    }
+});
+
+uploadZone.addEventListener('click', () => {
+    document.getElementById('uploadInput').click();
+});
+
+async function uploadFiles(files) {
+    const progressContainer = document.getElementById('uploadProgress');
+    progressContainer.style.display = 'block';
+    progressContainer.innerHTML = '';
+
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+
+    for (const file of files) {
+        const itemEl = document.createElement('div');
+        itemEl.className = 'upload-item';
+        itemEl.innerHTML = `
+            <i class="fas fa-file" style="color: var(--text-muted);"></i>
+            <div style="flex: 1; min-width: 0;">
+                <div class="file-name" style="font-size: 0.85rem;">${file.name}</div>
+                <div class="progress-bar"><div class="progress-fill" style="width: 0%"></div></div>
+            </div>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">0%</span>
+        `;
+        progressContainer.appendChild(itemEl);
+
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        let resolvedFilename = file.name;
+        let success = true;
+
+        for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const chunk = file.slice(start, end);
+
+            const formData = new FormData();
+            formData.append('chunk', chunk);
+            formData.append('filename', resolvedFilename);
+            formData.append('chunk_index', i);
+            formData.append('total_chunks', totalChunks);
+            formData.append('destination', currentPath || '');
+
+            try {
+                const res = await fetch('/api/upload-chunk', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    resolvedFilename = data.filename;
+                    const pct = Math.round(((i + 1) / totalChunks) * 100);
+                    itemEl.querySelector('.progress-fill').style.width = pct + '%';
+                    itemEl.querySelector('span').textContent = pct + '%';
+                } else {
+                    success = false;
+                    break;
+                }
+            } catch (e) {
+                success = false;
+                break;
+            }
+        }
+
+        if (success) {
+            itemEl.querySelector('.progress-fill').style.width = '100%';
+            itemEl.querySelector('span').textContent = '✓';
+            itemEl.querySelector('span').style.color = 'var(--success)';
+        } else {
+            itemEl.querySelector('span').textContent = '✗';
+            itemEl.querySelector('span').style.color = 'var(--danger)';
+        }
+    }
+
+    // Refresh after uploads
+    setTimeout(() => location.reload(), 3000);
+}
+
+// --- Context Menu ---
+function showContextMenu(e, el) {
+    e.preventDefault();
+    const menu = document.getElementById('contextMenu');
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    menu.classList.add('active');
+    menu._targetPath = el.dataset.path;
+    menu._targetName = el.dataset.name;
+    menu._isDir = el.dataset.isdir === 'true';
+}
+
+// Handle context menu actions
+document.querySelectorAll('.context-menu-item').forEach(item => {
+    item.addEventListener('click', async () => {
+        const menu = document.getElementById('contextMenu');
+        const action = item.dataset.action;
+        const path = menu._targetPath;
+        const name = menu._targetName;
+        menu.classList.remove('active');
+
+        switch (action) {
+            case 'open':
+                if (menu._isDir) {
+                    window.location.href = '/explorer/' + encodeURIComponent(path);
+                } else {
+                    const nameLower = name.toLowerCase();
+                    if (/\.(mp4|mkv|avi|mov|flv|webm|wmv)$/i.test(nameLower)) {
+                        window.location.href = '/videos?search=' + encodeURIComponent(name);
+                    } else if (/\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(nameLower)) {
+                        openMediaViewer(path, 'image', name);
+                    } else if (/\.(pdf|txt)$/i.test(nameLower)) {
+                        openMediaViewer(path, 'pdf', name);
+                    } else {
+                        window.open('/api/stream/' + encodeURIComponent(path), '_blank');
+                    }
+                }
+                break;
+            case 'rename':
+                showRenameModal(path, name);
+                break;
+            case 'delete':
+                if (confirm(`Delete "${name}"?`)) {
+                    await fetch('/api/delete', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ paths: [path] })
+                    });
+                    location.reload();
+                }
+                break;
+            case 'download':
+                window.open('/api/stream/' + encodeURIComponent(path), '_blank');
+                break;
+        }
+    });
+});
+
+// Close context menu
+document.addEventListener('click', () => {
+    document.getElementById('contextMenu').classList.remove('active');
+});
+
+// --- Create Folder ---
+function showCreateFolderModal() {
+    openModal('New Folder', `
+        <div style="margin-bottom: var(--space-md);">
+            <label class="form-label">Folder Name</label>
+            <input type="text" class="form-input" id="newFolderName" placeholder="Enter folder name" autofocus>
+        </div>
+    `, `
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="createFolder()">Create</button>
+    `);
+    setTimeout(() => document.getElementById('newFolderName')?.focus(), 100);
+}
+
+async function createFolder() {
+    const name = document.getElementById('newFolderName')?.value?.trim();
+    if (!name) return;
+
+    try {
+        const res = await fetch('/api/create-folder', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ parent: currentPath, name })
+        });
+        const data = await res.json();
+        if (data.success) {
+            closeModal();
+            showToast(`Folder "${name}" created`, 'success');
+            location.reload();
+        } else {
+            showToast('Error: ' + (data.detail || 'Unknown'), 'error');
+        }
+    } catch (e) {
+        showToast('Failed to create folder', 'error');
+    }
+}
+
+// --- Rename ---
+// Handled globally in app.js
+
+// --- Keyboard navigation ---
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Delete' && selectedItems.size > 0) {
+        if (confirm(`Delete ${selectedItems.size} item(s)?`)) {
+            fetch('/api/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ paths: Array.from(selectedItems) })
+            }).then(() => location.reload());
+        }
+    }
+    if (e.key === 'Backspace' && !document.querySelector('input:focus, textarea:focus')) {
+        e.preventDefault();
+        const parentLink = '{{ parent_path|replace("\\", "\\\\")|safe }}';
+        if (parentLink) window.location.href = '/explorer/' + encodeURIComponent(parentLink);
+    }
+});
+
+// Global upload handler
+function handleGlobalUpload(files) {
+    uploadFiles(files);
+}
+
+// --- Premium Media Viewer ---
+function openMediaViewer(path, type, name) {
+    const modal = document.getElementById('mediaViewerModal');
+    const content = document.getElementById('mediaViewerContent');
+    const title = document.getElementById('mediaViewerTitle');
+    const download = document.getElementById('mediaViewerDownload');
+    const url = '/api/stream/' + encodeURIComponent(path);
+    
+    // Set Toolbar
+    title.textContent = name || path.split(/[\\/]/).pop();
+    download.href = url;
+    
+    // Push History State (enables remote 'back' or mobile swipe to close)
+    history.pushState({ modalOpen: true }, "", window.location.href);
+    
+    if (type === 'image') {
+        content.innerHTML = `<img src="${url}" style="max-width: 90%; max-height: 90%; object-fit: contain; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border-radius: 8px;">`;
+    } else if (type === 'pdf') {
+        renderPremiumPdf(url);
+    } else if (type === 'txt') {
+        content.innerHTML = `<iframe src="${url}" style="width: 100%; height: 100%; border: none; background: white;"></iframe>`;
+    }
+    
+    modal.style.display = 'block';
+}
+
+async function renderPremiumPdf(url) {
+    const content = document.getElementById('mediaViewerContent');
+    content.innerHTML = `
+        <div id="pdfContainer" style="width: 100%; height: 100%; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; box-sizing: border-box; background: #0f0f1a;">
+            <div style="color: var(--text-muted); font-size: 1.2rem; display: flex; flex-direction: column; align-items: center; gap: 15px;">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                Preparing PDF document...
+            </div>
+        </div>
+        <!-- TV Floating Controls -->
+        <div class="tv-floating-controls" style="position: fixed; right: 30px; bottom: 30px; display: none; flex-direction: column; gap: 20px; z-index: 9999;">
+            <button onclick="scrollModalPdf(-window.innerHeight * 0.6)" style="width: 80px; height: 80px; border-radius: 40px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); color: white; font-size: 30px; backdrop-filter: blur(10px); cursor: pointer; display: flex; align-items: center; justify-content: center;"><i class="fas fa-chevron-up"></i></button>
+            <button onclick="scrollModalPdf(window.innerHeight * 0.6)" style="width: 80px; height: 80px; border-radius: 40px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); color: white; font-size: 30px; backdrop-filter: blur(10px); cursor: pointer; display: flex; align-items: center; justify-content: center;"><i class="fas fa-chevron-down"></i></button>
+        </div>
+    `;
+    if (document.body.classList.contains('tv-mode')) {
+        document.querySelector('.tv-floating-controls').style.display = 'flex';
+    }
+    
+    if (!window.pdfjsLib) {
+        await new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = "/static/js/pdf.min.js";
+            script.onload = resolve;
+            document.head.appendChild(script);
+        });
+        window.pdfjsLib = window['pdfjs-dist/build/pdf'];
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/js/pdf.worker.min.js';
+    }
+    
+    const container = document.getElementById('pdfContainer');
+    try {
+        const loadingTask = window.pdfjsLib.getDocument(url);
+        
+        loadingTask.onPassword = function(updatePassword, reason) {
+            container.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 400px; height: 100%; overflow-y: auto; color: white; width: 100%; padding: 20px;">
+                    <i class="fas fa-lock fa-3x" style="color: var(--warning); margin-bottom: 20px;"></i>
+                    <h3 style="margin-bottom: 10px;">Password Protected</h3>
+                    <p style="margin-bottom: 20px; color: var(--text-secondary);">Please enter the password to unlock this document.</p>
+                    <input type="password" id="inlinePdfPwd" style="padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: white; margin-bottom: 20px; width: 300px; max-width: 90%;">
+                    <button id="inlinePdfSubmit" class="btn btn-primary" style="width: 300px; max-width: 90%;">Unlock Document</button>
+                </div>
+            `;
+            const pwdInput = document.getElementById('inlinePdfPwd');
+            const pwdSubmit = document.getElementById('inlinePdfSubmit');
+            
+            if (reason === window.pdfjsLib.PasswordResponses.INCORRECT_PASSWORD) {
+                pwdInput.style.borderColor = 'red';
+            }
+            pwdInput.focus();
+            
+            pwdSubmit.onclick = () => {
+                if (pwdInput.value) {
+                    container.innerHTML = '<div style="color: white; margin-top: 50px;">Decrypting... <i class="fas fa-spinner fa-spin"></i></div>';
+                    updatePassword(pwdInput.value);
+                }
+            };
+        };
+
+        const pdf = await loadingTask.promise;
+        
+        container.innerHTML = ''; 
+        
+        // Use IntersectionObserver to lazy load pages (handles 500+ page PDFs instantly)
+        
+        // --- High-Performance TV-Optimized PDF Renderer ---
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const canvas = entry.target;
+                    if (!canvas.dataset.rendered && !canvas.dataset.rendering) {
+                        canvas.dataset.rendering = 'true';
+                        const pageNum = parseInt(canvas.dataset.page);
+                        
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#f0f0f0';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        
+                        // Queue rendering to prevent TV freezing
+                        setTimeout(() => {
+                            pdf.getPage(pageNum).then(page => {
+                                // TVs have weak GPUs. Use 1.0 scale for TV, 1.5 for desktop.
+                                const isTV = document.body.classList.contains('tv-mode');
+                                const scale = isTV ? 1.0 : 1.5;
+                                const viewport = page.getViewport({scale: scale});
+                                
+                                canvas.height = viewport.height;
+                                canvas.width = viewport.width;
+                                
+                                page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise.then(() => {
+                                    canvas.dataset.rendered = 'true';
+                                    canvas.dataset.rendering = '';
+                                });
+                            });
+                        }, 50); // Small delay allows UI thread to breathe
+                    }
+                }
+            });
+        }, { root: container, rootMargin: '200px' });
+        
+        for(let i = 1; i <= pdf.numPages; i++) {
+            const canvas = document.createElement('canvas');
+            canvas.dataset.page = i;
+            
+            // Responsive CSS styling
+            canvas.style.width = '100%';
+            canvas.style.maxWidth = '1000px';
+            canvas.style.height = 'auto';
+            canvas.style.aspectRatio = '1 / 1.414'; // Standard A4 placeholder
+            canvas.style.marginBottom = '30px';
+            canvas.style.backgroundColor = 'white';
+            canvas.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+            canvas.style.borderRadius = '4px';
+            
+            container.appendChild(canvas);
+            observer.observe(canvas);
+        }
+
+    } catch (e) {
+        container.innerHTML = `<div style="color: var(--danger);"><i class="fas fa-exclamation-triangle"></i> Error loading PDF: ${e.message}</div>`;
+    }
+}
+
+function closeMediaViewer(fromHistory = false) {
+    document.getElementById('mediaViewerModal').style.display = 'none';
+    document.getElementById('mediaViewerContent').innerHTML = '';
+    
+    // Exit fullscreen if active
+    if (document.fullscreenElement) {
+        document.exitFullscreen().catch(()=>{});
+    }
+    
+    // Navigate back in history to remove the pushed state, unless we're already closing from a popstate
+    if (!fromHistory && history.state && history.state.modalOpen) {
+        history.back();
+    }
+}
+
+// Handle Back button/swipe
+window.addEventListener('popstate', (e) => {
+    if (document.getElementById('mediaViewerModal').style.display === 'block') {
+        closeMediaViewer(true);
+    }
+});
+
+function toggleFullscreen() {
+    const modal = document.getElementById('mediaViewerModal');
+    const icon = document.getElementById('fullscreenIcon');
+    
+    if (!document.fullscreenElement) {
+        modal.requestFullscreen().catch(err => {
+            console.log(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+        icon.className = 'fas fa-compress';
+    } else {
+        document.exitFullscreen();
+        icon.className = 'fas fa-expand';
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header text-center mb-lg">
+    <h2><i class="fas fa-broadcast-tower" style="color: var(--accent-primary); margin-right: 10px;"></i>Live Screen Share</h2>
+    <p>Stream your screen to the whole network.</p>
+</div>
+
+<div class="flex flex-col items-center justify-center" style="min-height: 50vh;">
+    <div id="setupView" class="text-center">
+        {% if broadcaster_active %}
+        <div class="alert alert-info mb-md">
+            <i class="fas fa-info-circle"></i> A live stream is currently active!
+        </div>
+        <button id="joinStreamBtn" class="btn btn-primary btn-lg">
+            <i class="fas fa-eye"></i> Watch Live Stream
+        </button>
+        {% else %}
+        <div class="alert alert-warning mb-md" id="noStreamAlert">
+            <i class="fas fa-video-slash"></i> No one is currently streaming.
+        </div>
+        <div class="flex gap-md justify-center flex-wrap">
+            <button id="startScreenBtn" class="btn btn-primary btn-lg">
+                <i class="fas fa-desktop"></i> Share Screen
+            </button>
+            <button id="startCameraBtn" class="btn btn-secondary btn-lg">
+                <i class="fas fa-camera"></i> Share Camera
+            </button>
+        </div>
+        {% endif %}
+    </div>
+
+    <div id="videoContainer" style="display: none; width: 100%; max-width: 1000px; position: relative;">
+        <div style="position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(220,38,38,0.9); color: white; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 0.8rem; display: flex; align-items: center; gap: 5px;">
+            <div style="width: 8px; height: 8px; background: white; border-radius: 50%; animation: pulse 1.5s infinite;"></div>
+            LIVE
+        </div>
+        <video id="liveVideo" autoplay playsinline controls muted style="width: 100%; border-radius: var(--radius-lg); box-shadow: 0 10px 30px rgba(0,0,0,0.5); background: #000;"></video>
+        
+        <div id="controls" class="flex justify-center mt-md gap-md">
+            <button id="stopBtn" class="btn btn-danger" style="display: none;">
+                <i class="fas fa-stop-circle"></i> Stop Broadcasting
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.5); opacity: 0.5; }
+    100% { transform: scale(1); opacity: 1; }
+}
+</style>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const setupView = document.getElementById('setupView');
+const videoContainer = document.getElementById('videoContainer');
+const liveVideo = document.getElementById('liveVideo');
+const startScreenBtn = document.getElementById('startScreenBtn');
+const startCameraBtn = document.getElementById('startCameraBtn');
+const joinStreamBtn = document.getElementById('joinStreamBtn');
+const stopBtn = document.getElementById('stopBtn');
+
+const isBroadcasterActiveInitially = {{ 'true' if broadcaster_active else 'false' }};
+let ws;
+let localStream;
+let peerConnections = {}; // viewer_id -> RTCPeerConnection
+let isBroadcaster = false;
+
+// WebRTC Config
+const rtcConfig = {
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+};
+
+function connectWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${protocol}//${window.location.host}/ws/webrtc`);
+
+    ws.onmessage = async (event) => {
+        const msg = JSON.parse(event.data);
+        console.log("WS Message:", msg.type);
+
+        if (msg.type === 'broadcaster_connected') {
+            if (!isBroadcaster) {
+                showToast('A stream has started!', 'info');
+                setTimeout(() => window.location.reload(), 1500);
+            }
+        }
+        else if (msg.type === 'broadcaster_disconnected') {
+            showToast('The stream has ended.', 'info');
+            setTimeout(() => window.location.reload(), 1500);
+        }
+        else if (msg.type === 'error') {
+            showToast(msg.message, 'error');
+            setTimeout(() => window.location.reload(), 1500);
+        }
+        else if (msg.type === 'viewer_joined') {
+            if (isBroadcaster) handleViewerJoined(msg.viewer_id);
+        }
+        else if (msg.type === 'viewer_left') {
+            if (isBroadcaster && peerConnections[msg.viewer_id]) {
+                peerConnections[msg.viewer_id].close();
+                delete peerConnections[msg.viewer_id];
+            }
+        }
+        else if (msg.type === 'offer') {
+            if (!isBroadcaster) handleOffer(msg.sdp);
+        }
+        else if (msg.type === 'answer') {
+            if (isBroadcaster) handleAnswer(msg.viewer_id, msg.sdp);
+        }
+        else if (msg.type === 'ice_candidate') {
+            handleIceCandidate(msg.viewer_id, msg.candidate);
+        }
+    };
+}
+
+// ---------------- Broadcaster Logic ----------------
+// ---------------- Broadcaster Logic ----------------
+async function startBroadcast(type) {
+    // Redirect to HTTPS dual-server if on HTTP (unless already on localhost)
+    if (window.location.protocol === 'http:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        const secureUrl = `https://${window.location.hostname}:8443/live`;
+        alert("Security Notice: Broadcasting requires a secure connection.\n\nYou will now be redirected to the secure broadcasting port.\n\nPlease accept the 'Connection is not private' browser warning (click Advanced -> Proceed) to start your stream!");
+        window.location.href = secureUrl;
+        return;
+    }
+
+    if (!navigator.mediaDevices) {
+        showToast("WebRTC is not supported in this browser.", "error");
+        return;
+    }
+
+    try {
+        if (type === 'screen') {
+            if (!navigator.mediaDevices.getDisplayMedia) {
+                showToast("Screen sharing is not supported by your mobile browser. Use Camera instead.", "error");
+                return;
+            }
+            try {
+                localStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: "always" },
+                    audio: true
+                });
+            } catch (e) {
+                // If it fails (often due to audio capture errors on specific windows), retry without audio
+                console.warn("Screen share with audio failed, retrying without audio...", e);
+                localStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: "always" },
+                    audio: false
+                });
+                showToast("Started without audio due to system restrictions.", "warning");
+            }
+        } else {
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: true
+            });
+        }
+        
+        liveVideo.srcObject = localStream;
+        liveVideo.muted = true; // Always mute self to prevent feedback
+        
+        setupView.style.display = 'none';
+        videoContainer.style.display = 'block';
+        stopBtn.style.display = 'block'; // Show stop button only for broadcaster
+        isBroadcaster = true;
+        
+        ws.send(JSON.stringify({ type: 'broadcaster_join' }));
+
+        // Listen to stop sharing via browser UI
+        localStream.getVideoTracks()[0].onended = stopStreaming;
+        
+    } catch (err) {
+        console.error("Error starting stream:", err);
+        showToast("Failed to capture: " + err.message, "error");
+    }
+}
+
+if (startScreenBtn) startScreenBtn.addEventListener('click', () => startBroadcast('screen'));
+if (startCameraBtn) startCameraBtn.addEventListener('click', () => startBroadcast('camera'));
+
+async function handleViewerJoined(viewerId) {
+    console.log("Viewer joined:", viewerId);
+    const pc = new RTCPeerConnection(rtcConfig);
+    peerConnections[viewerId] = pc;
+
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            ws.send(JSON.stringify({
+                type: 'ice_candidate',
+                viewer_id: viewerId,
+                candidate: event.candidate
+            }));
+        }
+    };
+
+    // Add local tracks
+    localStream.getTracks().forEach(track => {
+        pc.addTrack(track, localStream);
+    });
+
+    // Create Offer
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    
+    ws.send(JSON.stringify({
+        type: 'offer',
+        viewer_id: viewerId,
+        sdp: offer
+    }));
+}
+
+async function handleAnswer(viewerId, sdp) {
+    const pc = peerConnections[viewerId];
+    if (pc) {
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    }
+}
+
+function stopStreaming() {
+    if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+    }
+    if (ws) {
+        ws.close();
+    }
+    window.location.reload();
+}
+
+// ---------------- Viewer Logic ----------------
+if (joinStreamBtn) {
+    joinStreamBtn.addEventListener('click', () => {
+        setupView.style.display = 'none';
+        videoContainer.style.display = 'block';
+        
+        ws.send(JSON.stringify({ type: 'viewer_join' }));
+    });
+}
+
+let viewerPc;
+
+async function handleOffer(sdp) {
+    viewerPc = new RTCPeerConnection(rtcConfig);
+    
+    viewerPc.onicecandidate = (event) => {
+        if (event.candidate) {
+            ws.send(JSON.stringify({
+                type: 'ice_candidate',
+                candidate: event.candidate
+            }));
+        }
+    };
+
+    viewerPc.ontrack = (event) => {
+        liveVideo.srcObject = event.streams[0];
+        // The video is muted by default so it can autoplay. 
+        // We show a toast to tell the user they can unmute it.
+        showToast("Stream started! Unmute the video player to hear audio.", "info");
+    };
+
+    await viewerPc.setRemoteDescription(new RTCSessionDescription(sdp));
+    const answer = await viewerPc.createAnswer();
+    await viewerPc.setLocalDescription(answer);
+
+    ws.send(JSON.stringify({
+        type: 'answer',
+        sdp: answer
+    }));
+}
+
+function handleIceCandidate(viewerId, candidate) {
+    const rtcCandidate = new RTCIceCandidate(candidate);
+    if (isBroadcaster) {
+        const pc = peerConnections[viewerId];
+        if (pc) pc.addIceCandidate(rtcCandidate);
+    } else {
+        if (viewerPc) viewerPc.addIceCandidate(rtcCandidate);
+    }
+}
+
+stopBtn.addEventListener('click', stopStreaming);
+
+// Connect on load
+connectWebSocket();
+
+</script>
+{% endblock %}

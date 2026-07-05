@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="top-bar">
+    <div class="page-header">
+        <h2><i class="fas fa-images" style="color: #f59e0b; margin-right: 8px;"></i>Photo Gallery</h2>
+        <p>{{ total_photos }} photos</p>
+    </div>
+    <div class="top-bar-actions">
+        {% if folders %}
+        <select class="form-select" style="width: auto;" onchange="filterPhotos(this.value)" tabindex="0">
+            <option value="">All Folders</option>
+            {% for f in folders %}
+            <option value="{{ f }}" {% if current_folder == f %}selected{% endif %}>{{ f.split('\\')[-1] or f.split('/')[-1] }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </div>
+</div>
+
+{% if photos %}
+<!-- Masonry Grid -->
+<div class="masonry-grid" id="photoGrid">
+    {% for photo in photos %}
+    <div class="masonry-item" onclick="openLightbox({{ loop.index0 }})" tabindex="0"
+         data-src="{{ photo.stream_url }}" data-name="{{ photo.filename }}" data-size="{{ photo.size_formatted }}">
+        <img src="{{ photo.thumbnail_url or photo.stream_url }}" alt="{{ photo.filename }}" loading="lazy">
+        <button class="favorite-btn {% if photo.is_favorite %}active{% endif %}" 
+                style="opacity: 1; top: 8px; right: 8px;"
+                onclick="event.stopPropagation(); togglePhotoFav({{ photo.id }}, this);" tabindex="0">
+            <i class="fas fa-heart"></i>
+        </button>
+        
+        <button class="menu-btn" style="background: rgba(0,0,0,0.5);" onclick="event.preventDefault(); event.stopPropagation(); toggleCardMenu(this)">
+            <i class="fas fa-ellipsis-v"></i>
+        </button>
+        
+        <div class="card-menu">
+            <div class="card-menu-item" onclick="event.preventDefault(); event.stopPropagation(); showRenameModal('{{ photo.path|replace('\\', '\\\\')|replace('\'', '\\\'') }}', '{{ photo.filename|replace('\'', '\\\'') }}')">
+                <i class="fas fa-pen"></i> Rename
+            </div>
+            <div class="card-menu-item" onclick="event.preventDefault(); event.stopPropagation(); window.open('/api/stream/{{ photo.path|urlencode }}', '_blank')">
+                <i class="fas fa-download"></i> Download
+            </div>
+            <div class="card-menu-item danger" onclick="event.preventDefault(); event.stopPropagation(); deleteFile('{{ photo.path|replace('\\', '\\\\')|replace('\'', '\\\'') }}', '{{ photo.filename|replace('\'', '\\\'') }}')">
+                <i class="fas fa-trash"></i> Delete
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+    <img src="" id="lightboxImg" alt="">
+    <button class="player-btn" style="position: absolute; left: 20px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.5);"
+            onclick="event.stopPropagation(); lightboxNav(-1);" tabindex="0">
+        <i class="fas fa-chevron-left"></i>
+    </button>
+    <button class="player-btn" style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.5);"
+            onclick="event.stopPropagation(); lightboxNav(1);" tabindex="0">
+        <i class="fas fa-chevron-right"></i>
+    </button>
+    <div class="lightbox-controls">
+        <button class="player-btn" onclick="event.stopPropagation(); rotateLightbox();" title="Rotate" tabindex="0">
+            <i class="fas fa-rotate-right"></i>
+        </button>
+        <button class="player-btn" onclick="event.stopPropagation(); downloadPhoto();" title="Download" tabindex="0">
+            <i class="fas fa-download"></i>
+        </button>
+        <button class="player-btn" onclick="closeLightbox()" title="Close" tabindex="0">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+    <div style="position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%); text-align: center;">
+        <div style="color: white; font-size: 0.9rem; font-weight: 600;" id="lightboxName"></div>
+        <div style="color: rgba(255,255,255,0.6); font-size: 0.8rem;" id="lightboxMeta"></div>
+    </div>
+</div>
+
+{% else %}
+<div class="empty-state">
+    <i class="fas fa-images"></i>
+    <h3>No photos found</h3>
+    <p>Add media folders in Settings to discover your photos.</p>
+    <a href="/settings" class="btn btn-primary btn-lg mt-lg"><i class="fas fa-folder-plus"></i> Add Folders</a>
+</div>
+{% endif %}
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if current_page > 1 %}
+    <a href="?page={{ current_page - 1 }}" tabindex="0"><i class="fas fa-chevron-left"></i></a>
+    {% endif %}
+    {% for p in range(1, total_pages + 1) %}
+    {% if p == current_page %}
+    <span class="active">{{ p }}</span>
+    {% elif p <= 3 or p >= total_pages - 2 or (p >= current_page - 1 and p <= current_page + 1) %}
+    <a href="?page={{ p }}" tabindex="0">{{ p }}</a>
+    {% elif p == 4 %}
+    <span>...</span>
+    {% endif %}
+    {% endfor %}
+    {% if current_page < total_pages %}
+    <a href="?page={{ current_page + 1 }}" tabindex="0"><i class="fas fa-chevron-right"></i></a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const photos = document.querySelectorAll('.masonry-item');
+let currentLightboxIdx = 0;
+let rotation = 0;
+
+function openLightbox(idx) {
+    currentLightboxIdx = idx;
+    const item = photos[idx];
+    const img = document.getElementById('lightboxImg');
+    img.src = item.dataset.src;
+    img.style.transform = 'rotate(0deg)';
+    rotation = 0;
+    document.getElementById('lightboxName').textContent = item.dataset.name;
+    document.getElementById('lightboxMeta').textContent = item.dataset.size;
+    document.getElementById('lightbox').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox(e) {
+    if (e && e.target !== e.currentTarget && !e.target.closest('.lightbox-controls button[title="Close"]')) return;
+    document.getElementById('lightbox').classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+function lightboxNav(dir) {
+    currentLightboxIdx = (currentLightboxIdx + dir + photos.length) % photos.length;
+    openLightbox(currentLightboxIdx);
+}
+
+function rotateLightbox() {
+    rotation += 90;
+    document.getElementById('lightboxImg').style.transform = `rotate(${rotation}deg)`;
+}
+
+function downloadPhoto() {
+    const item = photos[currentLightboxIdx];
+    const a = document.createElement('a');
+    a.href = item.dataset.src;
+    a.download = item.dataset.name;
+    a.click();
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+    if (!document.getElementById('lightbox').classList.contains('active')) return;
+    switch (e.key) {
+        case 'ArrowLeft': lightboxNav(-1); break;
+        case 'ArrowRight': lightboxNav(1); break;
+        case 'Escape': closeLightbox(); break;
+    }
+});
+
+function filterPhotos(folder) {
+    const params = new URLSearchParams(window.location.search);
+    if (folder) params.set('folder', folder);
+    else params.delete('folder');
+    params.set('page', '1');
+    window.location.search = params.toString();
+}
+
+async function togglePhotoFav(id, btn) {
+    try {
+        const res = await fetch('/api/favorite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_id: id })
+        });
+        const data = await res.json();
+        btn.classList.toggle('active', data.is_favorite);
+    } catch (e) {}
+}
+</script>
+{% endblock %}

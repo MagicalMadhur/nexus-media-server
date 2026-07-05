@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="top-bar">
+    <div class="page-header">
+        <h2><i class="fas fa-film" style="color: var(--accent-primary); margin-right: 8px;"></i>Video Library</h2>
+        <p>{{ total_videos }} videos found</p>
+    </div>
+    <div class="search-bar">
+        <i class="fas fa-search"></i>
+        <input type="text" id="videoSearch" placeholder="Search videos..." value="{{ search }}"
+               oninput="searchVideos(this.value)" tabindex="0">
+    </div>
+</div>
+
+<!-- Filters & Sort -->
+<div class="flex items-center justify-between mb-lg" style="flex-wrap: wrap; gap: var(--space-md);">
+    <div class="flex items-center gap-md">
+        <!-- Sort -->
+        <select class="form-select" style="width: auto;" onchange="applyFilter()" id="sortSelect" tabindex="0">
+            <option value="date_added" {% if sort == 'date_added' %}selected{% endif %}>Newest First</option>
+            <option value="filename" {% if sort == 'filename' %}selected{% endif %}>Name</option>
+            <option value="size" {% if sort == 'size' %}selected{% endif %}>Size</option>
+            <option value="duration" {% if sort == 'duration' %}selected{% endif %}>Duration</option>
+        </select>
+        <!-- Folder filter -->
+        {% if folders %}
+        <select class="form-select" style="width: auto;" onchange="applyFilter()" id="folderSelect" tabindex="0">
+            <option value="">All Folders</option>
+            {% for f in folders %}
+            <option value="{{ f }}" {% if current_folder == f %}selected{% endif %}>{{ f.split('\\')[-1] or f.split('/')[-1] }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </div>
+    <div class="flex items-center gap-sm">
+        <span class="text-muted" style="font-size: 0.85rem;">{{ total_videos }} videos</span>
+    </div>
+</div>
+
+<!-- Continue Watching Grid -->
+{% if continue_watching %}
+<div class="mb-lg">
+    <div class="flex items-center justify-between mb-md">
+        <h3 style="font-size: 1.2rem; font-weight: 700;">
+            <i class="fas fa-play-circle" style="color: var(--accent-primary); margin-right: 8px;"></i>
+            Continue Watching
+        </h3>
+    </div>
+    <div class="grid grid-auto">
+        {% for video in continue_watching %}
+        <a href="/player/{{ video.id }}" class="media-card" tabindex="0">
+            <div class="media-thumbnail">
+                {% if video.thumbnail_path %}
+                <img src="/api/thumbnail/{{ video.id }}" alt="{{ video.filename }}" loading="lazy">
+                {% else %}
+                <div class="placeholder-icon"><i class="fas fa-film"></i></div>
+                {% endif %}
+                <div class="media-overlay">
+                    <div class="media-play-btn"><i class="fas fa-play"></i></div>
+                </div>
+                {% if video.duration %}
+                <span class="media-duration">{{ video.duration|format_duration }}</span>
+                {% endif %}
+            </div>
+            <div class="media-progress-bar">
+                <div class="media-progress-fill" style="width: {{ video.progress * 100 }}%"></div>
+            </div>
+            <div class="media-info">
+                <div class="media-title">{{ video.filename }}</div>
+                <div class="media-meta">
+                    <span><i class="fas fa-clock"></i> {{ (video.duration - video.position)|format_duration }} left</span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Video Grid -->
+{% if videos %}
+<div class="grid grid-auto">
+    {% for video in videos %}
+    <a href="/player/{{ video.id }}" class="media-card" tabindex="0">
+        <div class="media-thumbnail">
+            {% if video.thumbnail_url %}
+            <img src="{{ video.thumbnail_url }}" alt="{{ video.filename }}" loading="lazy">
+            {% else %}
+            <div class="placeholder-icon"><i class="fas fa-film"></i></div>
+            {% endif %}
+            <div class="media-overlay">
+                <div class="media-play-btn"><i class="fas fa-play"></i></div>
+            </div>
+            {% if video.duration_formatted %}
+            <span class="media-duration">{{ video.duration_formatted }}</span>
+            {% endif %}
+            <button class="favorite-btn {% if video.is_favorite %}active{% endif %}" 
+                    onclick="event.preventDefault(); event.stopPropagation(); toggleFav({{ video.id }}, this);"
+                    tabindex="0">
+                <i class="fas fa-heart"></i>
+            </button>
+        </div>
+        {% if video.watch_progress > 0 %}
+        <div class="media-progress-bar">
+            <div class="media-progress-fill" style="width: {{ video.watch_progress }}%"></div>
+        </div>
+        {% endif %}
+        <div class="media-info" style="position: relative;">
+            <div class="media-title">{{ video.filename }}</div>
+            <button class="menu-btn" style="bottom: 15px;" onclick="event.preventDefault(); event.stopPropagation(); toggleCardMenu(this)">
+                <i class="fas fa-ellipsis-v"></i>
+            </button>
+            <div class="card-menu">
+                <div class="card-menu-item" onclick="event.preventDefault(); event.stopPropagation(); showRenameModal('{{ video.path|replace('\\', '\\\\')|replace('\'', '\\\'') }}', '{{ video.filename|replace('\'', '\\\'') }}')">
+                    <i class="fas fa-pen"></i> Rename
+                </div>
+                <div class="card-menu-item" onclick="event.preventDefault(); event.stopPropagation(); window.open('/api/stream/{{ video.path|urlencode }}', '_blank')">
+                    <i class="fas fa-download"></i> Download
+                </div>
+                <div class="card-menu-item danger" onclick="event.preventDefault(); event.stopPropagation(); deleteFile('{{ video.path|replace('\\', '\\\\')|replace('\'', '\\\'') }}', '{{ video.filename|replace('\'', '\\\'') }}')">
+                    <i class="fas fa-trash"></i> Delete
+                </div>
+            </div>
+            <div class="media-meta" style="margin-right: 25px;">
+                <span><i class="fas fa-hard-drive"></i> {{ video.size_formatted }}</span>
+                {% if video.resolution %}
+                <span><i class="fas fa-desktop"></i> {{ video.resolution }}</span>
+                {% endif %}
+                {% if video.codec %}
+                <span>{{ video.codec }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <i class="fas fa-film"></i>
+    <h3>No videos found</h3>
+    <p>Add media folders in Settings and run a scan to discover your videos.</p>
+    <a href="/settings" class="btn btn-primary btn-lg mt-lg"><i class="fas fa-folder-plus"></i> Add Folders</a>
+</div>
+{% endif %}
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if current_page > 1 %}
+    <a href="?page={{ current_page - 1 }}&sort={{ sort }}&order={{ order }}{% if current_folder %}&folder={{ current_folder }}{% endif %}" tabindex="0">
+        <i class="fas fa-chevron-left"></i>
+    </a>
+    {% endif %}
+    {% for p in range(1, total_pages + 1) %}
+    {% if p == current_page %}
+    <span class="active">{{ p }}</span>
+    {% elif p <= 3 or p >= total_pages - 2 or (p >= current_page - 1 and p <= current_page + 1) %}
+    <a href="?page={{ p }}&sort={{ sort }}&order={{ order }}{% if current_folder %}&folder={{ current_folder }}{% endif %}" tabindex="0">{{ p }}</a>
+    {% elif p == 4 or p == total_pages - 3 %}
+    <span>...</span>
+    {% endif %}
+    {% endfor %}
+    {% if current_page < total_pages %}
+    <a href="?page={{ current_page + 1 }}&sort={{ sort }}&order={{ order }}{% if current_folder %}&folder={{ current_folder }}{% endif %}" tabindex="0">
+        <i class="fas fa-chevron-right"></i>
+    </a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let searchTimeout;
+function searchVideos(query) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (query) params.set('search', query);
+        else params.delete('search');
+        params.set('page', '1');
+        window.location.search = params.toString();
+    }, 500);
+}
+
+function applyFilter() {
+    const sort = document.getElementById('sortSelect').value;
+    const folder = document.getElementById('folderSelect')?.value || '';
+    const params = new URLSearchParams(window.location.search);
+    params.set('sort', sort);
+    if (folder) params.set('folder', folder);
+    else params.delete('folder');
+    params.set('page', '1');
+    window.location.search = params.toString();
+}
+
+async function toggleFav(id, btn) {
+    try {
+        const res = await fetch('/api/favorite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_id: id })
+        });
+        const data = await res.json();
+        btn.classList.toggle('active', data.is_favorite);
+    } catch (e) {}
+}
+</script>
+{% endblock %}

@@ -1,0 +1,645 @@
+{% extends "base.html" %}
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/player.css">
+{% endblock %}
+
+{% block content %}
+<div class="player-page">
+    <!-- Video Player -->
+    <div class="player-wrapper paused" id="playerWrapper">
+        <video id="videoPlayer" preload="metadata" playsinline>
+            <source src="{{ video.stream_url }}" type="{{ video.mime_type|default('video/mp4') }}">
+            {% for sub in subtitle_files %}
+            <track kind="subtitles" label="{{ sub.label }}" src="{{ sub.src }}" 
+                   srclang="en" {% if loop.first %}default{% endif %}>
+            {% endfor %}
+        </video>
+
+        <!-- Center Play Overlay -->
+        <div class="center-play-overlay" id="centerPlayOverlay" onclick="togglePlay()">
+            <div class="center-play-btn"><i class="fas fa-play"></i></div>
+        </div>
+
+        <!-- Skip Indicators (double-tap feedback) -->
+        <div class="skip-indicator left" id="skipLeft">
+            <i class="fas fa-backward"></i>
+            <span>10s</span>
+        </div>
+        <div class="skip-indicator right" id="skipRight">
+            <i class="fas fa-forward"></i>
+            <span>10s</span>
+        </div>
+
+        <!-- Custom Controls -->
+        <div class="custom-controls" id="customControls">
+            <!-- Seek Bar -->
+            <div class="seek-container" id="seekContainer">
+                <div class="seek-tooltip" id="seekTooltip">0:00</div>
+                <div class="seek-bar">
+                    <div class="seek-buffer" id="seekBuffer" style="width: 0%"></div>
+                    <div class="seek-progress" id="seekProgress" style="width: 0%"></div>
+                    <div class="seek-thumb" id="seekThumb" style="left: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Controls Row -->
+            <div class="controls-row">
+                <!-- Left Controls -->
+                <div class="controls-left">
+                    {% if prev_video %}
+                    <a href="/player/{{ prev_video.id }}" class="player-btn" title="Previous" tabindex="0">
+                        <i class="fas fa-backward-step"></i>
+                    </a>
+                    {% endif %}
+
+                    <button class="player-btn" onclick="skip(-30)" title="Back 30s" tabindex="0">
+                        <i class="fas fa-rotate-left"></i>
+                        <span class="skip-label">30</span>
+                    </button>
+                    <button class="player-btn" onclick="skip(-10)" title="Back 10s" tabindex="0">
+                        <i class="fas fa-backward"></i>
+                        <span class="skip-label">10</span>
+                    </button>
+
+                    <button class="player-btn play-pause" onclick="togglePlay()" id="playPauseBtn" title="Play/Pause" tabindex="0">
+                        <i class="fas fa-play" id="playPauseIcon"></i>
+                    </button>
+
+                    <button class="player-btn" onclick="skip(10)" title="Forward 10s" tabindex="0">
+                        <i class="fas fa-forward"></i>
+                        <span class="skip-label">10</span>
+                    </button>
+                    <button class="player-btn" onclick="skip(30)" title="Forward 30s" tabindex="0">
+                        <i class="fas fa-rotate-right"></i>
+                        <span class="skip-label">30</span>
+                    </button>
+
+                    {% if next_video %}
+                    <a href="/player/{{ next_video.id }}" class="player-btn" title="Next" tabindex="0">
+                        <i class="fas fa-forward-step"></i>
+                    </a>
+                    {% endif %}
+
+                    <span class="time-display">
+                        <span id="currentTime">0:00</span> / <span id="totalTime">0:00</span>
+                    </span>
+                </div>
+
+                <!-- Right Controls -->
+                <div class="controls-right">
+                    <!-- Volume -->
+                    <div class="volume-control">
+                        <button class="player-btn" onclick="toggleMute()" id="volumeBtn" title="Mute" tabindex="0">
+                            <i class="fas fa-volume-high" id="volumeIcon"></i>
+                        </button>
+                        <div class="volume-slider" id="volumeSlider">
+                            <div class="volume-fill" id="volumeFill" style="width: 100%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Subtitles -->
+                    {% if subtitle_files %}
+                    <div style="position: relative;">
+                        <button class="player-btn" onclick="toggleSubtitleMenu()" title="Subtitles" tabindex="0">
+                            <i class="fas fa-closed-captioning"></i>
+                        </button>
+                        <div class="subtitle-menu" id="subtitleMenu">
+                            <div class="speed-option" data-track="-1" onclick="setSubtitle(-1)">Off</div>
+                            {% for sub in subtitle_files %}
+                            <div class="speed-option {% if loop.first %}active{% endif %}" 
+                                 data-track="{{ loop.index0 }}" onclick="setSubtitle({{ loop.index0 }})">
+                                {{ sub.label }}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Speed -->
+                    <div style="position: relative;">
+                        <button class="player-btn" onclick="toggleSpeedMenu()" id="speedBtn" title="Speed" tabindex="0">
+                            <span style="font-size: 0.75rem; font-weight: 700;" id="speedLabel">1x</span>
+                        </button>
+                        <div class="speed-menu" id="speedMenu">
+                            {% for speed in [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4] %}
+                            <div class="speed-option {% if speed == 1 %}active{% endif %}" 
+                                 data-speed="{{ speed }}" onclick="setSpeed({{ speed }})">
+                                {{ speed }}x
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Cast Button -->
+                    <button class="player-btn" title="Cast to TV" style="display: flex; align-items: center; justify-content: center;">
+                        <google-cast-launcher></google-cast-launcher>
+                    </button>
+
+                    <!-- PiP -->
+                    <button class="player-btn" onclick="togglePiP()" title="Picture in Picture" tabindex="0">
+                        <i class="fas fa-window-restore"></i>
+                    </button>
+
+                    <!-- Fullscreen -->
+                    <button class="player-btn" onclick="toggleFullscreen()" id="fullscreenBtn" title="Fullscreen" tabindex="0">
+                        <i class="fas fa-expand" id="fullscreenIcon"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Info -->
+    <div class="video-info-panel">
+        <div class="video-details">
+            <h1>{{ video.filename }}</h1>
+            <div class="video-meta-tags">
+                {% if video.resolution %}
+                <span class="meta-tag"><i class="fas fa-desktop"></i> {{ video.resolution }}</span>
+                {% endif %}
+                {% if video.duration %}
+                <span class="meta-tag"><i class="fas fa-clock"></i> {{ video.duration_formatted }}</span>
+                {% endif %}
+                {% if video.codec %}
+                <span class="meta-tag"><i class="fas fa-microchip"></i> {{ video.codec }}</span>
+                {% endif %}
+                <span class="meta-tag"><i class="fas fa-hard-drive"></i> {{ video.size_formatted }}</span>
+                <span class="meta-tag"><i class="fas fa-folder"></i> {{ video.parent_folder|default('Unknown') }}</span>
+            </div>
+        </div>
+        <div class="video-actions">
+            <button class="btn {% if video.is_favorite %}btn-primary{% else %}btn-secondary{% endif %}" 
+                    onclick="toggleFavorite({{ video.id }})" id="favBtn" tabindex="0">
+                <i class="fas fa-heart"></i>
+                <span id="favText">{{ 'Favorited' if video.is_favorite else 'Favorite' }}</span>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Google Cast SDK -->
+<script>
+window.__onGCastApiAvailable = function(isAvailable) {
+    if (isAvailable) {
+        cast.framework.CastContext.getInstance().setOptions({
+            receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+            autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
+        });
+        
+        var context = cast.framework.CastContext.getInstance();
+        context.addEventListener(
+            cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+            function(event) {
+                switch (event.sessionState) {
+                    case cast.framework.SessionState.SESSION_STARTED:
+                    case cast.framework.SessionState.SESSION_RESUMED:
+                        console.log('Cast session started');
+                        loadMediaToCast();
+                        break;
+                    case cast.framework.SessionState.SESSION_ENDED:
+                        console.log('Cast session ended');
+                        break;
+                }
+            }
+        );
+    }
+};
+</script>
+<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+
+<script>
+// --- Video Player Logic ---
+const video = document.getElementById('videoPlayer');
+const playerWrapper = document.getElementById('playerWrapper');
+const mediaId = {{ video.id }};
+const startPosition = {{ watch_position }};
+let controlsTimeout;
+let isSeeking = false;
+let lastTap = 0;
+let longPressTimer;
+let wasPlayingBeforeLongPress = false;
+let progressSaveInterval;
+
+// --- Init ---
+document.addEventListener('DOMContentLoaded', () => {
+    // Resume from last position
+    if (startPosition > 0) {
+        video.currentTime = startPosition;
+        showToast(`Resuming from ${formatTime(startPosition)}`, 'info');
+    }
+
+    // Auto-hide controls
+    resetControlsTimer();
+
+    // Save progress every 5 seconds
+    progressSaveInterval = setInterval(saveProgress, 5000);
+
+    // Media Session API (lock screen controls)
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: '{{ video.filename|replace("'", "\\'") }}',
+        });
+        navigator.mediaSession.setActionHandler('play', () => video.play());
+        navigator.mediaSession.setActionHandler('pause', () => video.pause());
+        navigator.mediaSession.setActionHandler('seekbackward', () => skip(-10));
+        navigator.mediaSession.setActionHandler('seekforward', () => skip(10));
+    }
+});
+
+// --- Play/Pause ---
+function togglePlay() {
+    if (video.paused) {
+        video.play();
+    } else {
+        video.pause();
+    }
+}
+
+video.addEventListener('play', () => {
+    document.getElementById('playPauseIcon').className = 'fas fa-pause';
+    playerWrapper.classList.remove('paused');
+    resetControlsTimer();
+});
+
+video.addEventListener('pause', () => {
+    document.getElementById('playPauseIcon').className = 'fas fa-play';
+    playerWrapper.classList.add('paused');
+    playerWrapper.classList.remove('controls-hidden');
+});
+
+// --- Time Update ---
+video.addEventListener('timeupdate', () => {
+    if (isSeeking) return;
+    const progress = (video.currentTime / video.duration) * 100;
+    document.getElementById('seekProgress').style.width = progress + '%';
+    document.getElementById('seekThumb').style.left = progress + '%';
+    document.getElementById('currentTime').textContent = formatTime(video.currentTime);
+});
+
+video.addEventListener('loadedmetadata', () => {
+    document.getElementById('totalTime').textContent = formatTime(video.duration);
+});
+
+// --- Buffered ---
+video.addEventListener('progress', () => {
+    if (video.buffered.length > 0) {
+        const buffered = (video.buffered.end(video.buffered.length - 1) / video.duration) * 100;
+        document.getElementById('seekBuffer').style.width = buffered + '%';
+    }
+});
+
+// --- Seek Bar ---
+const seekContainer = document.getElementById('seekContainer');
+
+seekContainer.addEventListener('mousedown', startSeek);
+seekContainer.addEventListener('touchstart', startSeek, { passive: false });
+
+function startSeek(e) {
+    e.preventDefault();
+    isSeeking = true;
+    updateSeek(e);
+    document.addEventListener('mousemove', updateSeek);
+    document.addEventListener('mouseup', endSeek);
+    document.addEventListener('touchmove', updateSeek, { passive: false });
+    document.addEventListener('touchend', endSeek);
+}
+
+function updateSeek(e) {
+    const rect = seekContainer.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    let percent = (clientX - rect.left) / rect.width;
+    percent = Math.max(0, Math.min(1, percent));
+
+    document.getElementById('seekProgress').style.width = (percent * 100) + '%';
+    document.getElementById('seekThumb').style.left = (percent * 100) + '%';
+
+    const time = percent * video.duration;
+    document.getElementById('seekTooltip').textContent = formatTime(time);
+    document.getElementById('seekTooltip').style.left = (percent * 100) + '%';
+    document.getElementById('currentTime').textContent = formatTime(time);
+}
+
+function endSeek(e) {
+    const rect = seekContainer.getBoundingClientRect();
+    const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+    let percent = (clientX - rect.left) / rect.width;
+    percent = Math.max(0, Math.min(1, percent));
+
+    video.currentTime = percent * video.duration;
+    isSeeking = false;
+
+    document.removeEventListener('mousemove', updateSeek);
+    document.removeEventListener('mouseup', endSeek);
+    document.removeEventListener('touchmove', updateSeek);
+    document.removeEventListener('touchend', endSeek);
+}
+
+// --- Skip ---
+function skip(seconds) {
+    video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
+
+    // Visual feedback
+    const indicator = seconds < 0 ? document.getElementById('skipLeft') : document.getElementById('skipRight');
+    indicator.querySelector('span').textContent = Math.abs(seconds) + 's';
+    indicator.classList.add('active');
+    setTimeout(() => indicator.classList.remove('active'), 500);
+}
+
+// --- Volume ---
+function toggleMute() {
+    video.muted = !video.muted;
+    updateVolumeUI();
+}
+
+function updateVolumeUI() {
+    const icon = document.getElementById('volumeIcon');
+    if (video.muted || video.volume === 0) {
+        icon.className = 'fas fa-volume-xmark';
+    } else if (video.volume < 0.5) {
+        icon.className = 'fas fa-volume-low';
+    } else {
+        icon.className = 'fas fa-volume-high';
+    }
+    document.getElementById('volumeFill').style.width = (video.muted ? 0 : video.volume * 100) + '%';
+}
+
+const volumeSlider = document.getElementById('volumeSlider');
+volumeSlider.addEventListener('click', (e) => {
+    const rect = volumeSlider.getBoundingClientRect();
+    video.volume = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    video.muted = false;
+    updateVolumeUI();
+});
+
+// --- Speed ---
+function toggleSpeedMenu() {
+    document.getElementById('speedMenu').classList.toggle('active');
+    document.getElementById('subtitleMenu')?.classList.remove('active');
+}
+
+function setSpeed(speed) {
+    video.playbackRate = speed;
+    document.getElementById('speedLabel').textContent = speed + 'x';
+    document.getElementById('speedMenu').classList.remove('active');
+
+    // Update active state
+    document.querySelectorAll('#speedMenu .speed-option').forEach(el => {
+        el.classList.toggle('active', parseFloat(el.dataset.speed) === speed);
+    });
+}
+
+// --- Subtitles ---
+function toggleSubtitleMenu() {
+    document.getElementById('subtitleMenu')?.classList.toggle('active');
+    document.getElementById('speedMenu').classList.remove('active');
+}
+
+function setSubtitle(trackIndex) {
+    const tracks = video.textTracks;
+    for (let i = 0; i < tracks.length; i++) {
+        tracks[i].mode = (i === trackIndex) ? 'showing' : 'hidden';
+    }
+    document.getElementById('subtitleMenu').classList.remove('active');
+}
+
+// --- Fullscreen ---
+function toggleFullscreen() {
+    if (document.fullscreenElement) {
+        document.exitFullscreen();
+    } else {
+        playerWrapper.requestFullscreen().catch(() => {
+            // Fallback for older browsers
+            if (playerWrapper.webkitRequestFullscreen) playerWrapper.webkitRequestFullscreen();
+        });
+    }
+}
+
+document.addEventListener('fullscreenchange', () => {
+    const icon = document.getElementById('fullscreenIcon');
+    icon.className = document.fullscreenElement ? 'fas fa-compress' : 'fas fa-expand';
+});
+
+// --- PiP ---
+function togglePiP() {
+    if (document.pictureInPictureElement) {
+        document.exitPictureInPicture();
+    } else if (video.requestPictureInPicture) {
+        video.requestPictureInPicture();
+    }
+}
+
+// --- Controls Auto-hide ---
+function resetControlsTimer() {
+    playerWrapper.classList.remove('controls-hidden');
+    clearTimeout(controlsTimeout);
+    if (!video.paused) {
+        controlsTimeout = setTimeout(() => {
+            playerWrapper.classList.add('controls-hidden');
+        }, 3000);
+    }
+}
+
+playerWrapper.addEventListener('mousemove', resetControlsTimer);
+playerWrapper.addEventListener('touchstart', resetControlsTimer);
+
+// --- Double-click fullscreen ---
+playerWrapper.addEventListener('dblclick', (e) => {
+    if (e.target.closest('.custom-controls')) return;
+    toggleFullscreen();
+});
+
+// --- Double tap to seek (mobile) ---
+playerWrapper.addEventListener('touchend', (e) => {
+    if (e.target.closest('.custom-controls')) return;
+    const now = Date.now();
+    if (now - lastTap < 300) {
+        const rect = playerWrapper.getBoundingClientRect();
+        const x = e.changedTouches[0].clientX - rect.left;
+        if (x < rect.width / 3) {
+            skip(-10);
+        } else if (x > rect.width * 2 / 3) {
+            skip(10);
+        } else {
+            togglePlay();
+        }
+        e.preventDefault();
+    }
+    lastTap = now;
+});
+
+// --- Long press = 2x speed ---
+playerWrapper.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.custom-controls')) return;
+    longPressTimer = setTimeout(() => {
+        wasPlayingBeforeLongPress = !video.paused;
+        video.playbackRate = 2;
+        showToast('2x Speed', 'info');
+    }, 500);
+});
+
+playerWrapper.addEventListener('touchend', () => {
+    clearTimeout(longPressTimer);
+    if (video.playbackRate === 2) {
+        video.playbackRate = parseFloat(document.getElementById('speedLabel').textContent);
+    }
+});
+
+// --- Keyboard Shortcuts ---
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    switch (e.key) {
+        case ' ':
+        case 'k':
+            e.preventDefault();
+            togglePlay();
+            break;
+        case 'ArrowRight':
+            e.preventDefault();
+            skip(e.shiftKey ? 30 : 10);
+            break;
+        case 'ArrowLeft':
+            e.preventDefault();
+            skip(e.shiftKey ? -30 : -10);
+            break;
+        case 'ArrowUp':
+            e.preventDefault();
+            video.volume = Math.min(1, video.volume + 0.1);
+            video.muted = false;
+            updateVolumeUI();
+            break;
+        case 'ArrowDown':
+            e.preventDefault();
+            video.volume = Math.max(0, video.volume - 0.1);
+            updateVolumeUI();
+            break;
+        case 'f':
+        case 'F':
+            e.preventDefault();
+            toggleFullscreen();
+            break;
+        case 'm':
+        case 'M':
+            e.preventDefault();
+            toggleMute();
+            break;
+        case 'Escape':
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            }
+            break;
+        case 'Enter':
+            // TV Remote OK button
+            e.preventDefault();
+            togglePlay();
+            break;
+    }
+
+    resetControlsTimer();
+});
+
+// --- Save Progress ---
+function saveProgress() {
+    if (video.duration && video.currentTime > 0) {
+        fetch('/api/watch-progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                media_id: mediaId,
+                position: video.currentTime,
+                duration: video.duration,
+            })
+        }).catch(() => {});
+    }
+}
+
+// Save on page leave
+window.addEventListener('beforeunload', saveProgress);
+video.addEventListener('ended', () => {
+    saveProgress();
+    {% if next_video %}
+    // Auto-play next
+    showToast('Playing next video...', 'info');
+    setTimeout(() => {
+        window.location.href = '/player/{{ next_video.id }}';
+    }, 2000);
+    {% endif %}
+});
+
+// --- Favorite ---
+async function toggleFavorite(id) {
+    try {
+        const res = await fetch('/api/favorite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_id: id })
+        });
+        const data = await res.json();
+        const btn = document.getElementById('favBtn');
+        const txt = document.getElementById('favText');
+        if (data.is_favorite) {
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-primary');
+            txt.textContent = 'Favorited';
+            showToast('Added to favorites', 'success');
+        } else {
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-secondary');
+            txt.textContent = 'Favorite';
+            showToast('Removed from favorites', 'info');
+        }
+    } catch (e) {}
+}
+
+// --- Utility ---
+function formatTime(seconds) {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Close menus on outside click
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#speedMenu') && !e.target.closest('[onclick*="toggleSpeedMenu"]')) {
+        document.getElementById('speedMenu').classList.remove('active');
+    }
+    if (!e.target.closest('#subtitleMenu') && !e.target.closest('[onclick*="toggleSubtitleMenu"]')) {
+        document.getElementById('subtitleMenu')?.classList.remove('active');
+    }
+});
+
+// --- Google Cast Logic ---
+function loadMediaToCast() {
+    var castSession = cast.framework.CastContext.getInstance().getCurrentSession();
+    if (!castSession) return;
+    
+    // Use the absolute URL with local IP so TV can reach it
+    var streamUrl = "{{ server_url }}{{ video.stream_url }}";
+    
+    var mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, "video/mp4");
+    mediaInfo.metadata = new chrome.cast.media.GenericMediaMetadata();
+    mediaInfo.metadata.title = '{{ video.filename|replace("'", "\\'") }}';
+    
+    var request = new chrome.cast.media.LoadRequest(mediaInfo);
+    // Start casting from current time
+    request.currentTime = video.currentTime;
+    
+    castSession.loadMedia(request).then(
+        function() { 
+            console.log('Cast loaded successfully');
+            video.pause(); // Pause local playback
+            showToast('Playing on TV', 'success');
+        },
+        function(errorCode) { 
+            console.error('Cast Error code: ' + errorCode); 
+            showToast('Failed to cast to TV', 'error');
+        }
+    );
+}
+</script>
+{% endblock %}
