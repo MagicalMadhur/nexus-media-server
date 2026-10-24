@@ -348,6 +348,16 @@ Contributions are welcome! Here's how to get started:
 
 <br/>
 
+## 📚 Technical References & Benchmarks
+
+- [RFC 7233 — Hypertext Transfer Protocol: Range Requests](https://datatracker.ietf.org/doc/html/rfc7233) — Official IETF standard for partial content delivery.
+- [Self-Hosted Media Storage & ZFS Throughput Telemetry](https://www.thelifehacknexus.com/2026/10/the-diy-nas-vs-cloud-storage-breakdown.html) — Field benchmarks on local streaming bottlenecks and cache hit rates.
+<br/>
+
+---
+
+<br/>
+
 ## 📄 License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
